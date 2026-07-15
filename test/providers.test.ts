@@ -74,6 +74,34 @@ describe("quota provider parsers", () => {
     ]);
   });
 
+  it("discovers any Codex rate limit window by its actual duration", () => {
+    // Given
+    const now = Date.parse("2026-07-15T00:00:00.000Z");
+
+    // When
+    const windows = parseCodexUsage(
+      {
+        rate_limit: {
+          weekly_window: {
+            used_percent: 3,
+            reset_after_seconds: 86_400,
+            limit_window_seconds: 604_800,
+          },
+          rolling_five_hour_window: {
+            used_percent: 40,
+            reset_after_seconds: 9_000,
+            limit_window_seconds: 18_000,
+          },
+        },
+      },
+      now,
+    );
+
+    // Then
+    expect(windows.map((window) => window.kind)).toEqual(["7d", "5h"]);
+    expect(windows[1]).toMatchObject({ kind: "5h", usagePercent: 40, remainingMs: 9_000_000 });
+  });
+
   it("reports Codex usage egress blocks as a short error", async () => {
     // Given
     const response = Response.json(

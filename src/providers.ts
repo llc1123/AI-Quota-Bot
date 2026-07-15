@@ -84,10 +84,12 @@ export function parseCodexUsage(raw: unknown, nowMs = Date.now()): readonly Quot
   if (!isRecord(raw)) return [];
   if (isRecord(raw["rate_limit"])) {
     const limit = raw["rate_limit"];
-    return [
-      codexWindow(limit["primary_window"], "5h", nowMs),
-      codexWindow(limit["secondary_window"], "7d", nowMs),
-    ].filter((value): value is QuotaWindow => value !== undefined);
+    const windows = new Map<WindowKind, QuotaWindow>();
+    for (const value of Object.values(limit)) {
+      const window = codexWindow(value, "5h", nowMs);
+      if (window) windows.set(window.kind, window);
+    }
+    return [...windows.values()];
   }
   return [];
 }

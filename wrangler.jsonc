@@ -6,8 +6,14 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-15",
   "triggers": {
-    "crons": ["7 * * * *"]
+    "crons": ["*/10 * * * *"]
   },
+  "kv_namespaces": [
+    {
+      "binding": "REPORT_STATE",
+      "id": "53154e55098a41008c8ca69353d42e01"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

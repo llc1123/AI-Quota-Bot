@@ -3,6 +3,7 @@ import { codexStub, requiredEnv, type SecretName } from "./env";
 import { bearerAuth, json } from "./http";
 import { collectSnapshots } from "./providers";
 import { buildMarkdown } from "./report";
+import { saveReportBaseline, shouldSendScheduledReport } from "./report-state";
 import { sendWecomMarkdown } from "./wecom";
 
 export { CodexAuthState };
@@ -50,6 +51,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/run") {
     const current = await report(env);
     await sendWecomMarkdown(requiredEnv(env, "WECOM_WEBHOOK_URL"), current.markdown);
+    await saveReportBaseline(env.REPORT_STATE, current.snapshots);
     return json({ ok: true, snapshots: current.snapshots });
   }
   if (request.method === "GET" && url.pathname === "/codex/status")
@@ -63,6 +65,9 @@ export default {
   fetch: handleRequest,
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const current = await report(env);
+    const shouldSend = await shouldSendScheduledReport(env.REPORT_STATE, current.snapshots);
+    if (!shouldSend) return;
     await sendWecomMarkdown(requiredEnv(env, "WECOM_WEBHOOK_URL"), current.markdown);
+    await saveReportBaseline(env.REPORT_STATE, current.snapshots);
   },
 } satisfies ExportedHandler<Env>;
