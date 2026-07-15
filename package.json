@@ -9,8 +9,8 @@
     "build": "vite build",
     "test": "vitest run",
     "lint": "biome check .",
-    "typecheck": "npm run types && tsc --noEmit",
-    "check": "npm run types && npm run lint && tsc --noEmit && npm run test && npm run build",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
