@@ -45,7 +45,6 @@ GitHub Variables：
 - `GCP_REGION=asia-northeast1`
 - `GCP_ARTIFACT_REPOSITORY=ai-quota-bot`
 - `GCP_RELAY_SERVICE=codex-usage-relay`
-- `GCP_RELAY_RUNTIME_SERVICE_ACCOUNT=codex-relay-runtime@llc-personal.iam.gserviceaccount.com`
 - `GCP_WORKLOAD_IDENTITY_PROVIDER=projects/833268932862/locations/global/workloadIdentityPools/github/providers/github`
 - `CLOUDFLARE_ACCOUNT_ID=fc1f4ce1cc619f0f7dde83674c85b62c`
 

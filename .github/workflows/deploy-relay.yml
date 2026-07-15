@@ -18,12 +18,10 @@ jobs:
     name: Build and deploy Cloud Run relay
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
       GCP_RELAY_SERVICE: ${{ vars.GCP_RELAY_SERVICE }}
-      GCP_RELAY_RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RELAY_RUNTIME_SERVICE_ACCOUNT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
