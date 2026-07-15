@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-quota-bot",
+  "workers_dev": true,
+  "preview_urls": false,
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "triggers": {
+    "crons": ["7 * * * *"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CODEX_AUTH",
+        "class_name": "CodexAuthState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CodexAuthState"]
+    }
+  ],
+  "vars": {
+    "REPORT_TITLE": "AI 额度播报",
+    "TIME_ZONE": "Asia/Shanghai",
+    "CODEX_ISSUER": "https://auth.openai.com",
+    "CODEX_API_BASE": "https://chatgpt.com/backend-api",
+    "CODEX_OAUTH_CLIENT_ID": "app_EMoamEEZ73f0CkXaXp7hrann",
+    "ZENMUX_API_BASE": "https://zenmux.ai"
+  }
+}

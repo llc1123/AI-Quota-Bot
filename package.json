@@ -1,0 +1,24 @@
+{
+  "name": "ai-quota-bot-new",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "wrangler types worker-configuration.d.ts",
+    "dev": "vite dev",
+    "build": "vite build",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "typecheck": "npm run types && tsc --noEmit",
+    "check": "npm run types && npm run lint && tsc --noEmit && npm run test && npm run build",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.4",
+    "@cloudflare/vite-plugin": "^1.45.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.111.0"
+  }
+}

@@ -1,0 +1,35 @@
+import type { CodexUsageRelay } from "./codex-http";
+
+export const DEFAULT_CODEX_ISSUER = "https://auth.openai.com";
+export const DEFAULT_CODEX_API_BASE = "https://chatgpt.com/backend-api";
+export const DEFAULT_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+export const DEFAULT_ZENMUX_API_BASE = "https://zenmux.ai";
+export const KRILL_SUBSCRIPTION_URL = "https://www.krill-ai.com/api/subscription";
+
+export function textEnv(value: string | undefined, fallback = ""): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+export type SecretName =
+  | "WECOM_WEBHOOK_URL"
+  | "ADMIN_TOKEN"
+  | "CODEX_TOKEN_ENCRYPTION_KEY"
+  | "ZENMUX_MANAGEMENT_KEY"
+  | "KRILL_JWT";
+
+export function requiredEnv(env: Env, key: SecretName): string {
+  const value = env[key];
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${String(key)} 未配置`);
+  return value.trim();
+}
+
+export function codexStub(env: Env): DurableObjectStub {
+  return env.CODEX_AUTH.get(env.CODEX_AUTH.idFromName("codex"));
+}
+
+export function codexUsageRelay(env: Env): CodexUsageRelay | undefined {
+  const url = textEnv(env.CODEX_USAGE_RELAY_URL);
+  const token = textEnv(env.CODEX_USAGE_RELAY_TOKEN);
+  return url && token ? { url, token } : undefined;
+}

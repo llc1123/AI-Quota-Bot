@@ -1,0 +1,57 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/**
+      - test/**
+      - package.json
+      - package-lock.json
+      - wrangler.jsonc
+      - worker-configuration.d.ts
+      - vite.config.ts
+      - vitest.config.ts
+      - tsconfig.json
+      - biome.jsonc
+      - .github/workflows/deploy-worker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Cloudflare Worker
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.18.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create type-generation dev vars
+        run: |
+          cp .dev.vars.example .dev.vars
+          cat >> .dev.vars <<'EOF'
+          CODEX_USAGE_RELAY_URL="https://relay.example/wham/usage"
+          CODEX_USAGE_RELAY_TOKEN="dummy-relay-token"
+          EOF
+
+      - name: Check Worker
+        run: npm run check
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy

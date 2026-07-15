@@ -1,0 +1,78 @@
+name: Deploy Relay
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - relay/**
+      - .github/workflows/deploy-relay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build and deploy Cloud Run relay
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      GCP_RELAY_SERVICE: ${{ vars.GCP_RELAY_SERVICE }}
+      GCP_RELAY_RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RELAY_RUNTIME_SERVICE_ACCOUNT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_ARTIFACT_REPOSITORY }}/${{ env.GCP_RELAY_SERVICE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=ref,event=branch
+            type=ref,event=tag
+
+      - name: Build and push relay image
+        uses: docker/build-push-action@v7
+        with:
+          context: relay
+          file: relay/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resolve deployment image
+        id: deploy-image
+        run: echo "image=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPOSITORY}/${GCP_RELAY_SERVICE}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy relay to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ env.GCP_RELAY_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: ${{ steps.deploy-image.outputs.image }}
