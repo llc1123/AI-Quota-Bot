@@ -1,10 +1,4 @@
-import {
-  codexStub,
-  DEFAULT_ZENMUX_API_BASE,
-  KRILL_SUBSCRIPTION_URL,
-  requiredEnv,
-  textEnv,
-} from "./env";
+import { codexStub, KRILL_SUBSCRIPTION_URL, requiredEnv, ZENMUX_API_BASE } from "./env";
 import { asNumber, asString, fetchJson, isRecord, joinUrl } from "./http";
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
@@ -194,10 +188,7 @@ export async function collectSnapshots(
   });
   const zenmux = provider({ kind: "error", provider: "ZenMux", message: "" }, async () => {
     const raw = await fetchJson(
-      joinUrl(
-        textEnv(env.ZENMUX_API_BASE, DEFAULT_ZENMUX_API_BASE),
-        "/api/v1/management/subscription/detail",
-      ),
+      joinUrl(ZENMUX_API_BASE, "/api/v1/management/subscription/detail"),
       {
         headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
       },
@@ -205,15 +196,9 @@ export async function collectSnapshots(
     return { kind: "windowed", provider: "ZenMux", windows: parseZenmuxSubscription(raw, nowMs) };
   });
   const zenmuxPayg = provider({ kind: "error", provider: "ZenMux PAYG", message: "" }, async () => {
-    const raw = await fetchJson(
-      joinUrl(
-        textEnv(env.ZENMUX_API_BASE, DEFAULT_ZENMUX_API_BASE),
-        "/api/v1/management/payg/balance",
-      ),
-      {
-        headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
-      },
-    );
+    const raw = await fetchJson(joinUrl(ZENMUX_API_BASE, "/api/v1/management/payg/balance"), {
+      headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
+    });
     const balance = parseZenmuxPaygBalance(raw);
     if (!balance) throw new Error("ZenMux PAYG balance field not found");
     return { kind: "balance", provider: "ZenMux", balance };

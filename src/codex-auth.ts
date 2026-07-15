@@ -1,12 +1,11 @@
 import { codexUsageRequest } from "./codex-http";
 import { chatgptAccountId, jwtExpiryMs, openJson, type SealedBox, sealJson } from "./crypto";
 import {
+  CODEX_API_BASE,
+  CODEX_ISSUER,
+  CODEX_OAUTH_CLIENT_ID,
   codexUsageRelay,
-  DEFAULT_CODEX_API_BASE,
-  DEFAULT_CODEX_CLIENT_ID,
-  DEFAULT_CODEX_ISSUER,
   requiredEnv,
-  textEnv,
 } from "./env";
 import { asString, fetchJson, isRecord, joinUrl, json } from "./http";
 import { sendWecomMarkdown } from "./wecom";
@@ -84,14 +83,6 @@ export class CodexAuthState {
     await this.pollLogin();
   }
 
-  private issuer(): string {
-    return textEnv(this.env.CODEX_ISSUER, DEFAULT_CODEX_ISSUER).replace(/\/+$/, "");
-  }
-
-  private clientId(): string {
-    return textEnv(this.env.CODEX_OAUTH_CLIENT_ID, DEFAULT_CODEX_CLIENT_ID);
-  }
-
   private async loadTokens(): Promise<StoredTokens | undefined> {
     const box = await this.state.storage.get<SealedBox>(TOKENS_KEY);
     return box
@@ -139,11 +130,10 @@ export class CodexAuthState {
         verificationUrl: existing.verificationUrl,
       };
 
-    const issuer = this.issuer();
-    const response = await fetchJson(joinUrl(issuer, "/api/accounts/deviceauth/usercode"), {
+    const response = await fetchJson(joinUrl(CODEX_ISSUER, "/api/accounts/deviceauth/usercode"), {
       method: "POST",
       headers: { "content-type": "application/json", "user-agent": "codex-cli" },
-      body: JSON.stringify({ client_id: this.clientId() }),
+      body: JSON.stringify({ client_id: CODEX_OAUTH_CLIENT_ID }),
     });
     if (!isRecord(response)) throw new Error("Codex device login returned invalid JSON");
     const deviceAuthId = asString(response["device_auth_id"]);
@@ -155,7 +145,7 @@ export class CodexAuthState {
       userCode,
       intervalMs: Math.max(intervalSeconds, 1) * 1000,
       expiresAt: Date.now() + LOGIN_TTL_MS,
-      verificationUrl: joinUrl(issuer, "/codex/device"),
+      verificationUrl: joinUrl(CODEX_ISSUER, "/codex/device"),
     };
     await this.state.storage.put(LOGIN_KEY, login);
     await this.state.storage.setAlarm(Date.now() + login.intervalMs);
@@ -174,8 +164,7 @@ export class CodexAuthState {
       return;
     }
 
-    const issuer = this.issuer();
-    const response = await fetch(joinUrl(issuer, "/api/accounts/deviceauth/token"), {
+    const response = await fetch(joinUrl(CODEX_ISSUER, "/api/accounts/deviceauth/token"), {
       method: "POST",
       headers: { "content-type": "application/json", "user-agent": "codex-cli" },
       body: JSON.stringify({ device_auth_id: login.deviceAuthId, user_code: login.userCode }),
@@ -201,19 +190,19 @@ export class CodexAuthState {
     return this.tokenRequest({
       grant_type: "authorization_code",
       code,
-      redirect_uri: joinUrl(this.issuer(), "/deviceauth/callback"),
-      client_id: this.clientId(),
+      redirect_uri: joinUrl(CODEX_ISSUER, "/deviceauth/callback"),
+      client_id: CODEX_OAUTH_CLIENT_ID,
       code_verifier: verifier,
     });
   }
 
   private async refreshTokens(tokens: StoredTokens): Promise<StoredTokens> {
     if (tokens.expiresAt - Date.now() > REFRESH_SKEW_MS) return tokens;
-    const refreshed = await fetchJson(joinUrl(this.issuer(), "/oauth/token"), {
+    const refreshed = await fetchJson(joinUrl(CODEX_ISSUER, "/oauth/token"), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "codex-cli" },
       body: form({
-        client_id: this.clientId(),
+        client_id: CODEX_OAUTH_CLIENT_ID,
         grant_type: "refresh_token",
         refresh_token: tokens.refreshToken,
       }),
@@ -225,7 +214,7 @@ export class CodexAuthState {
   }
 
   private async tokenRequest(values: Record<string, string>): Promise<TokenResponse> {
-    const response = await fetchJson(joinUrl(this.issuer(), "/oauth/token"), {
+    const response = await fetchJson(joinUrl(CODEX_ISSUER, "/oauth/token"), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "codex-cli" },
       body: form(values),
@@ -238,9 +227,7 @@ export class CodexAuthState {
     const loaded = await this.loadTokens();
     if (!loaded) throw new Error("Codex 未登录");
     const tokens = await this.refreshTokens(loaded);
-    const base = textEnv(this.env.CODEX_API_BASE, DEFAULT_CODEX_API_BASE);
-    const path = base.includes("/backend-api") ? "/wham/usage" : "/api/codex/usage";
-    const url = joinUrl(base, path);
+    const url = joinUrl(CODEX_API_BASE, "/wham/usage");
     return codexUsageRequest(url, tokens.accessToken, codexUsageRelay(this.env));
   }
 

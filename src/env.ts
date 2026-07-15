@@ -1,9 +1,9 @@
 import type { CodexUsageRelay } from "./codex-http";
 
-export const DEFAULT_CODEX_ISSUER = "https://auth.openai.com";
-export const DEFAULT_CODEX_API_BASE = "https://chatgpt.com/backend-api";
-export const DEFAULT_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-export const DEFAULT_ZENMUX_API_BASE = "https://zenmux.ai";
+export const CODEX_ISSUER = "https://auth.openai.com";
+export const CODEX_API_BASE = "https://chatgpt.com/backend-api";
+export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+export const ZENMUX_API_BASE = "https://zenmux.ai";
 export const KRILL_SUBSCRIPTION_URL = "https://www.krill-ai.com/api/subscription";
 
 export function textEnv(value: string | undefined, fallback = ""): string {

@@ -5,9 +5,6 @@ CODEX_TOKEN_ENCRYPTION_KEY="base64-encoded-32-byte-key"
 ZENMUX_MANAGEMENT_KEY="..."
 KRILL_JWT="..."
 
-# 可选覆盖项
-# CODEX_ISSUER="https://auth.openai.com"
-# CODEX_API_BASE="https://chatgpt.com/backend-api"
+# Relay 由 gcloud/Cloud Run 首次部署后写入 Cloudflare Worker secret。
 # CODEX_USAGE_RELAY_URL="https://codex-usage-relay-xxx.a.run.app/wham/usage"
 # CODEX_USAGE_RELAY_TOKEN="replace-with-a-long-random-value"
-# ZENMUX_API_BASE="https://zenmux.ai"

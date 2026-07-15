@@ -1,5 +1,5 @@
 import { CodexAuthState } from "./codex-auth";
-import { codexStub, requiredEnv, type SecretName, textEnv } from "./env";
+import { codexStub, requiredEnv, type SecretName } from "./env";
 import { bearerAuth, json } from "./http";
 import { collectSnapshots } from "./providers";
 import { buildMarkdown } from "./report";
@@ -19,7 +19,7 @@ async function report(env: Env): Promise<{
   const snapshots = await collectSnapshots(env);
   return {
     snapshots,
-    markdown: buildMarkdown(snapshots, new Date(), textEnv(env.REPORT_TITLE, "AI 额度播报")),
+    markdown: buildMarkdown(snapshots),
   };
 }
 
