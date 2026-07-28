@@ -18,7 +18,10 @@ export type SecretName =
   | "ZENMUX_MANAGEMENT_KEY"
   | "KRILL_JWT";
 
-export function requiredEnv(env: Env, key: SecretName): string {
+export function requiredEnv(
+  env: Partial<Record<SecretName, string | undefined>>,
+  key: SecretName,
+): string {
   const value = env[key];
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${String(key)} 未配置`);
   return value.trim();
@@ -28,7 +31,9 @@ export function codexStub(env: Env): DurableObjectStub {
   return env.CODEX_AUTH.get(env.CODEX_AUTH.idFromName("codex"));
 }
 
-export function codexUsageRelay(env: Env): CodexUsageRelay | undefined {
+export function codexUsageRelay(
+  env: Pick<Env, "CODEX_USAGE_RELAY_URL" | "CODEX_USAGE_RELAY_TOKEN">,
+): CodexUsageRelay | undefined {
   const url = textEnv(env.CODEX_USAGE_RELAY_URL);
   const token = textEnv(env.CODEX_USAGE_RELAY_TOKEN);
   return url && token ? { url, token } : undefined;

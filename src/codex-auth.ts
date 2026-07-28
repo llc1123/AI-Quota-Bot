@@ -38,6 +38,31 @@ interface TokenResponse {
   expires_in?: number;
 }
 
+type CodexAuthStorage = {
+  readonly get: {
+    (key: typeof TOKENS_KEY): Promise<SealedBox | undefined>;
+    (key: typeof LOGIN_KEY): Promise<LoginAttempt | undefined>;
+  };
+  readonly put: {
+    (key: typeof TOKENS_KEY, value: SealedBox): Promise<void>;
+    (key: typeof LOGIN_KEY, value: LoginAttempt): Promise<void>;
+  };
+  readonly delete: (key: string) => Promise<unknown>;
+  readonly setAlarm: (scheduledTime: number | Date) => Promise<void>;
+};
+
+type CodexAuthObjectState = {
+  readonly storage: CodexAuthStorage;
+};
+
+type CodexAuthEnv = Pick<
+  Env,
+  | "CODEX_TOKEN_ENCRYPTION_KEY"
+  | "CODEX_USAGE_RELAY_TOKEN"
+  | "CODEX_USAGE_RELAY_URL"
+  | "WECOM_WEBHOOK_URL"
+>;
+
 function form(values: Record<string, string>): string {
   return new URLSearchParams(values).toString();
 }
@@ -61,10 +86,14 @@ function tokenSnapshot(previous: StoredTokens | undefined, next: TokenResponse):
   };
 }
 
+function isExpiredRefreshToken(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("refresh_token_expired");
+}
+
 export class CodexAuthState {
   constructor(
-    private readonly state: DurableObjectState,
-    private readonly env: Env,
+    private readonly state: CodexAuthObjectState,
+    private readonly env: CodexAuthEnv,
   ) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -84,7 +113,7 @@ export class CodexAuthState {
   }
 
   private async loadTokens(): Promise<StoredTokens | undefined> {
-    const box = await this.state.storage.get<SealedBox>(TOKENS_KEY);
+    const box = await this.state.storage.get(TOKENS_KEY);
     return box
       ? openJson<StoredTokens>(box, requiredEnv(this.env, "CODEX_TOKEN_ENCRYPTION_KEY"))
       : undefined;
@@ -106,7 +135,7 @@ export class CodexAuthState {
         accountId: tokens.accountId,
         expiresAt: new Date(tokens.expiresAt).toISOString(),
       };
-    const login = await this.state.storage.get<LoginAttempt>(LOGIN_KEY);
+    const login = await this.state.storage.get(LOGIN_KEY);
     if (login && login.expiresAt > Date.now()) {
       return {
         state: "pending",
@@ -120,9 +149,17 @@ export class CodexAuthState {
 
   private async login(): Promise<Record<string, unknown>> {
     const tokens = await this.loadTokens();
-    if (tokens) return { state: "authenticated", accountId: tokens.accountId };
+    if (tokens) {
+      try {
+        const refreshed = await this.refreshTokens(tokens);
+        return { state: "authenticated", accountId: refreshed.accountId };
+      } catch (error) {
+        if (!isExpiredRefreshToken(error)) throw error;
+        await this.state.storage.delete(TOKENS_KEY);
+      }
+    }
 
-    const existing = await this.state.storage.get<LoginAttempt>(LOGIN_KEY);
+    const existing = await this.state.storage.get(LOGIN_KEY);
     if (existing && existing.expiresAt > Date.now())
       return {
         state: "pending",
@@ -156,7 +193,7 @@ export class CodexAuthState {
   }
 
   private async pollLogin(): Promise<void> {
-    const login = await this.state.storage.get<LoginAttempt>(LOGIN_KEY);
+    const login = await this.state.storage.get(LOGIN_KEY);
     if (!login) return;
     if (login.expiresAt <= Date.now()) {
       await this.state.storage.delete(LOGIN_KEY);
