@@ -17,11 +17,15 @@ export function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-export async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+export async function fetchJson(
+  url: string,
+  init?: RequestInit,
+  requestTarget = url,
+): Promise<unknown> {
   const response = await fetch(url, init);
   const text = await response.text();
   if (!response.ok)
-    throw new Error(`${init?.method ?? "GET"} ${url} failed: ${response.status} ${text}`);
+    throw new Error(`${init?.method ?? "GET"} ${requestTarget} failed: ${response.status} ${text}`);
   if (text.trim() === "") return undefined;
   return JSON.parse(text);
 }

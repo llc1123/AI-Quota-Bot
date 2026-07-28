@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMarkdown } from "../src/report";
+import { buildMarkdown, buildTelegramMessage } from "../src/report";
 
 describe("buildMarkdown", () => {
   it("renders requested windows first and PAYG balances at the end", () => {
@@ -47,5 +47,48 @@ describe("buildMarkdown", () => {
     expect(markdown).toContain("> ZenMux：$33.65");
     expect(markdown).toContain("> Krill AI：$364.06");
     expect(markdown.indexOf("**备用按量渠道**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
+  });
+});
+
+describe("buildTelegramMessage", () => {
+  it("renders current quota as Telegram-safe plain text", () => {
+    // Given
+    const now = new Date("2026-07-15T00:00:00.000Z");
+
+    // When
+    const message = buildTelegramMessage(
+      [
+        {
+          kind: "windowed",
+          provider: "Codex",
+          windows: [{ kind: "5h", usagePercent: 12.34, timePercent: 50, remainingMs: 9_000_000 }],
+        },
+        { kind: "balance", provider: "Krill AI", balance: "$364.06" },
+        { kind: "error", provider: "ZenMux", message: "upstream unavailable" },
+      ],
+      now,
+    );
+
+    // Then
+    expect(message).toContain("AI 额度\n时间：2026/7/15 08:00:00");
+    expect(message).toContain("Codex\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
+    expect(message).toContain("ZenMux\n• 获取失败：upstream unavailable");
+    expect(message).toContain("备用按量渠道\n• Krill AI：$364.06");
+    expect(message).not.toContain("<font");
+    expect(message).not.toContain("**");
+  });
+
+  it("limits messages to Telegram's 4096-character boundary", () => {
+    // Given
+    const oversizedError = "x".repeat(5_000);
+
+    // When
+    const message = buildTelegramMessage([
+      { kind: "error", provider: "Codex", message: oversizedError },
+    ]);
+
+    // Then
+    expect(Array.from(message)).toHaveLength(4_096);
+    expect(message.endsWith("…")).toBe(true);
   });
 });

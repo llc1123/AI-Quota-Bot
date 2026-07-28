@@ -83,3 +83,42 @@ export function buildMarkdown(
   }
   return parts.join("\n");
 }
+
+export function buildTelegramMessage(
+  snapshots: readonly ProviderSnapshot[],
+  now = new Date(),
+): string {
+  const parts = [
+    "AI 额度",
+    `时间：${now.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}`,
+  ];
+  const balances: Extract<ProviderSnapshot, { readonly kind: "balance" }>[] = [];
+  for (const snapshot of snapshots) {
+    if (snapshot.kind === "windowed") {
+      parts.push(`\n${snapshot.provider}`);
+      parts.push(
+        ...(snapshot.windows.length > 0
+          ? snapshot.windows.map((window) => {
+              const suffix =
+                window.timing === "idle" ? "尚未开始计时" : `剩余 ${remaining(window.remainingMs)}`;
+              return `• ${label(window.kind)}：已用 ${percent(window.usagePercent)}；${suffix}`;
+            })
+          : ["• 未返回窗口额度"]),
+      );
+      continue;
+    }
+    if (snapshot.kind === "balance") {
+      balances.push(snapshot);
+      continue;
+    }
+    parts.push(`\n${snapshot.provider}`, `• 获取失败：${snapshot.message}`);
+  }
+  if (balances.length > 0) {
+    parts.push(
+      "\n备用按量渠道",
+      ...balances.map((snapshot) => `• ${snapshot.provider}：${snapshot.balance}`),
+    );
+  }
+  const message = Array.from(parts.join("\n"));
+  return message.length <= 4_096 ? message.join("") : `${message.slice(0, 4_095).join("")}…`;
+}

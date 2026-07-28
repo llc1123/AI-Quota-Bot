@@ -16,7 +16,10 @@ export type SecretName =
   | "ADMIN_TOKEN"
   | "CODEX_TOKEN_ENCRYPTION_KEY"
   | "ZENMUX_MANAGEMENT_KEY"
-  | "KRILL_JWT";
+  | "KRILL_JWT"
+  | "TELEGRAM_BOT_TOKEN"
+  | "TELEGRAM_WEBHOOK_SECRET"
+  | "TELEGRAM_ALLOWED_CHAT_IDS";
 
 export function requiredEnv(
   env: Partial<Record<SecretName, string | undefined>>,

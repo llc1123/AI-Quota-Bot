@@ -4,6 +4,9 @@ ADMIN_TOKEN="replace-with-a-long-random-value"
 CODEX_TOKEN_ENCRYPTION_KEY="base64-encoded-32-byte-key"
 ZENMUX_MANAGEMENT_KEY="..."
 KRILL_JWT="..."
+TELEGRAM_BOT_TOKEN="123456789:replace-with-botfather-token"
+TELEGRAM_WEBHOOK_SECRET="replace_with_random_letters_numbers_underscores_or_hyphens"
+TELEGRAM_ALLOWED_CHAT_IDS="-1001234567890"
 
 # Relay 由 gcloud/Cloud Run 首次部署后写入 Cloudflare Worker secret。
 # CODEX_USAGE_RELAY_URL="https://codex-usage-relay-xxx.a.run.app/wham/usage"
