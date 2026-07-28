@@ -4,7 +4,7 @@ export const CODEX_ISSUER = "https://auth.openai.com";
 export const CODEX_API_BASE = "https://chatgpt.com/backend-api";
 export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const ZENMUX_API_BASE = "https://zenmux.ai";
-export const KRILL_SUBSCRIPTION_URL = "https://www.krill-ai.com/api/subscription";
+export const KRILL_SUBSCRIPTION_URL = "https://www.krill-ai.net/api/subscription";
 
 export function textEnv(value: string | undefined, fallback = ""): string {
   const trimmed = value?.trim();

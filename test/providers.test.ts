@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { KRILL_SUBSCRIPTION_URL } from "../src/env";
 import {
   codexUsageJson,
   parseCodexUsage,
@@ -197,5 +198,10 @@ describe("quota provider parsers", () => {
 
     // Then
     expect(balance).toBe("$364.06");
+  });
+
+  it("uses the Krill final API host so Authorization survives the request", () => {
+    // Given / When / Then
+    expect(KRILL_SUBSCRIPTION_URL).toBe("https://www.krill-ai.net/api/subscription");
   });
 });
