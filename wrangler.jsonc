@@ -6,7 +6,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-15",
   "vars": {
-    "TELEGRAM_BOT_USERNAME": "llc_ai_quota_bot"
+    "TELEGRAM_BOT_USERNAME": "llc_ai_usage_bot"
   },
   "triggers": {
     "crons": ["*/10 * * * *"]
