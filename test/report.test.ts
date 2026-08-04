@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildMarkdown, buildTelegramMessage } from "../src/report";
 
 describe("buildMarkdown", () => {
-  it("renders requested windows first and PAYG balances at the end", () => {
+  it("renders provider windows in report order and PAYG balances at the end", () => {
     // Given
     const now = new Date("2026-07-15T00:00:00.000Z");
 
@@ -26,8 +26,21 @@ describe("buildMarkdown", () => {
         },
         {
           kind: "windowed",
+          provider: "ZenMux",
+          windows: [{ kind: "5h", usagePercent: 0, timePercent: 0, remainingMs: 18_000_000 }],
+        },
+        {
+          kind: "windowed",
           provider: "Krill AI",
-          windows: [{ kind: "cycle", usagePercent: 25, timePercent: 50, remainingMs: 302_400_000 }],
+          windows: [
+            {
+              kind: "cycle",
+              label: "Krill Pro 周卡",
+              usagePercent: 25,
+              timePercent: 50,
+              remainingMs: 302_400_000,
+            },
+          ],
         },
         { kind: "balance", provider: "ZenMux", balance: "$33.65" },
         { kind: "balance", provider: "Krill AI", balance: "$364.06" },
@@ -49,13 +62,15 @@ describe("buildMarkdown", () => {
     );
     expect(markdown).toContain("**Krill AI**");
     expect(markdown).toContain(
-      '周期窗口：用量 [<font color="info">###</font><font color="comment">-------</font>] 25.0%；剩余 3天12小时',
+      'Krill Pro 周卡：用量 [<font color="info">###</font><font color="comment">-------</font>] 25.0%；剩余 3天12小时',
     );
     expect(markdown).not.toContain("时长");
     expect(markdown).toContain("**备用按量渠道**");
     expect(markdown).toContain("> ZenMux：$33.65");
     expect(markdown).toContain("> Krill AI：$364.06");
     expect(markdown.indexOf("**备用按量渠道**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
+    expect(markdown.indexOf("**Krill AI**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
+    expect(markdown.indexOf("**Krill AI**")).toBeLessThan(markdown.indexOf("**ZenMux**"));
   });
 });
 
@@ -74,8 +89,21 @@ describe("buildTelegramMessage", () => {
         },
         {
           kind: "windowed",
+          provider: "ZenMux",
+          windows: [{ kind: "5h", usagePercent: 0, timePercent: 0, remainingMs: 18_000_000 }],
+        },
+        {
+          kind: "windowed",
           provider: "Krill AI",
-          windows: [{ kind: "cycle", usagePercent: 25, timePercent: 50, remainingMs: 302_400_000 }],
+          windows: [
+            {
+              kind: "cycle",
+              label: "Krill Pro 周卡",
+              usagePercent: 25,
+              timePercent: 50,
+              remainingMs: 302_400_000,
+            },
+          ],
         },
         { kind: "balance", provider: "Krill AI", balance: "$364.06" },
         { kind: "error", provider: "ZenMux", message: "upstream unavailable" },
@@ -86,11 +114,15 @@ describe("buildTelegramMessage", () => {
     // Then
     expect(message).toContain("AI 额度\n时间：2026/7/15 08:00:00");
     expect(message).toContain("Codex\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
-    expect(message).toContain("Krill AI\n• 周期窗口：已用 25.0%；剩余 3天12小时");
+    expect(message).toContain("Krill AI\n• Krill Pro 周卡：已用 25.0%；剩余 3天12小时");
     expect(message).toContain("ZenMux\n• 获取失败：upstream unavailable");
     expect(message).toContain("备用按量渠道\n• Krill AI：$364.06");
     expect(message).not.toContain("<font");
     expect(message).not.toContain("**");
+    expect(message.indexOf("Krill AI\n• Krill Pro 周卡")).toBeGreaterThan(
+      message.indexOf("Codex\n"),
+    );
+    expect(message.indexOf("Krill AI\n• Krill Pro 周卡")).toBeLessThan(message.indexOf("ZenMux\n"));
   });
 
   it("limits messages to Telegram's 4096-character boundary", () => {

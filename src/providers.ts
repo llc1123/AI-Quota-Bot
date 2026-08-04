@@ -12,6 +12,7 @@ export type WindowKind = "1d" | "5h" | "7d" | "cycle";
 export type QuotaWindow = {
   readonly id?: string;
   readonly kind: WindowKind;
+  readonly label?: string;
   readonly usagePercent: number;
   readonly timePercent: number;
   readonly remainingMs: number;
