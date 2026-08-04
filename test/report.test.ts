@@ -24,6 +24,11 @@ describe("buildMarkdown", () => {
             },
           ],
         },
+        {
+          kind: "windowed",
+          provider: "Krill AI",
+          windows: [{ kind: "cycle", usagePercent: 25, timePercent: 50, remainingMs: 302_400_000 }],
+        },
         { kind: "balance", provider: "ZenMux", balance: "$33.65" },
         { kind: "balance", provider: "Krill AI", balance: "$364.06" },
       ],
@@ -41,6 +46,10 @@ describe("buildMarkdown", () => {
     );
     expect(markdown).toContain(
       '5小时窗口：用量 [<font color="comment">----------</font>] 0.0%；尚未开始计时',
+    );
+    expect(markdown).toContain("**Krill AI**");
+    expect(markdown).toContain(
+      '周期窗口：用量 [<font color="info">###</font><font color="comment">-------</font>] 25.0%；剩余 3天12小时',
     );
     expect(markdown).not.toContain("时长");
     expect(markdown).toContain("**备用按量渠道**");
@@ -63,6 +72,11 @@ describe("buildTelegramMessage", () => {
           provider: "Codex",
           windows: [{ kind: "5h", usagePercent: 12.34, timePercent: 50, remainingMs: 9_000_000 }],
         },
+        {
+          kind: "windowed",
+          provider: "Krill AI",
+          windows: [{ kind: "cycle", usagePercent: 25, timePercent: 50, remainingMs: 302_400_000 }],
+        },
         { kind: "balance", provider: "Krill AI", balance: "$364.06" },
         { kind: "error", provider: "ZenMux", message: "upstream unavailable" },
       ],
@@ -72,6 +86,7 @@ describe("buildTelegramMessage", () => {
     // Then
     expect(message).toContain("AI 额度\n时间：2026/7/15 08:00:00");
     expect(message).toContain("Codex\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
+    expect(message).toContain("Krill AI\n• 周期窗口：已用 25.0%；剩余 3天12小时");
     expect(message).toContain("ZenMux\n• 获取失败：upstream unavailable");
     expect(message).toContain("备用按量渠道\n• Krill AI：$364.06");
     expect(message).not.toContain("<font");

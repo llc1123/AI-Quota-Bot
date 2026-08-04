@@ -1,12 +1,16 @@
 import { codexStub, KRILL_SUBSCRIPTION_URL, requiredEnv, ZENMUX_API_BASE } from "./env";
 import { asNumber, asString, fetchJson, isRecord, joinUrl } from "./http";
+import { parseKrillBalance, parseKrillCycleWindows } from "./krill";
+
+export { parseKrillBalance, parseKrillCycleWindows } from "./krill";
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type WindowKind = "5h" | "7d";
+export type WindowKind = "1d" | "5h" | "7d" | "cycle";
 
 export type QuotaWindow = {
+  readonly id?: string;
   readonly kind: WindowKind;
   readonly usagePercent: number;
   readonly timePercent: number;
@@ -17,7 +21,7 @@ export type QuotaWindow = {
 export type ProviderSnapshot =
   | {
       readonly kind: "windowed";
-      readonly provider: "Codex" | "ZenMux";
+      readonly provider: "Codex" | "ZenMux" | "Krill AI";
       readonly windows: readonly QuotaWindow[];
     }
   | { readonly kind: "balance"; readonly provider: "ZenMux" | "Krill AI"; readonly balance: string }
@@ -140,29 +144,6 @@ export function parseZenmuxPaygBalance(raw: unknown): string | undefined {
   return total === undefined ? undefined : `$${total.toFixed(2)}`;
 }
 
-export function parseKrillBalance(raw: unknown): string | undefined {
-  if (isRecord(raw) && isRecord(raw["data"])) {
-    const paid = numberLike(raw["data"]["credit_balance_usd"]);
-    const welfare = numberLike(raw["data"]["welfare_balance_usd"]);
-    if (paid !== undefined || welfare !== undefined)
-      return `$${((paid ?? 0) + (welfare ?? 0)).toFixed(2)}`;
-  }
-  const queue: unknown[] = [raw];
-  const keys = new Set(["balance", "credit", "credits", "remaining", "amount"]);
-  while (queue.length > 0) {
-    const value = queue.shift();
-    if (!isRecord(value)) continue;
-    for (const [key, candidate] of Object.entries(value)) {
-      if (keys.has(key.toLowerCase())) {
-        if (typeof candidate === "number") return candidate.toString();
-        if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-      }
-      if (isRecord(candidate)) queue.push(candidate);
-    }
-  }
-  return undefined;
-}
-
 async function provider<T extends ProviderSnapshot>(
   fallback: ProviderSnapshot,
   read: () => Promise<T>,
@@ -205,13 +186,33 @@ export async function collectSnapshots(
     if (!balance) throw new Error("ZenMux PAYG balance field not found");
     return { kind: "balance", provider: "ZenMux", balance };
   });
-  const krill = provider({ kind: "error", provider: "Krill AI", message: "" }, async () => {
-    const raw = await fetchJson(KRILL_SUBSCRIPTION_URL, {
-      headers: { authorization: `Bearer ${requiredEnv(env, "KRILL_JWT")}` },
-    });
-    const balance = parseKrillBalance(raw);
-    if (!balance) throw new Error("Krill balance field not found");
-    return { kind: "balance", provider: "Krill AI", balance };
-  });
-  return Promise.all([codex, zenmux, zenmuxPayg, krill]);
+  const krill = (async (): Promise<readonly ProviderSnapshot[]> => {
+    try {
+      const raw = await fetchJson(KRILL_SUBSCRIPTION_URL, {
+        headers: { authorization: `Bearer ${requiredEnv(env, "KRILL_JWT")}` },
+      });
+      const windows = parseKrillCycleWindows(raw, nowMs);
+      const balance = parseKrillBalance(raw);
+      const snapshots: ProviderSnapshot[] = [];
+      if (windows.length > 0) snapshots.push({ kind: "windowed", provider: "Krill AI", windows });
+      if (balance) snapshots.push({ kind: "balance", provider: "Krill AI", balance });
+      if (snapshots.length === 0) throw new Error("Krill subscription fields not found");
+      return snapshots;
+    } catch (error) {
+      return [
+        {
+          kind: "error",
+          provider: "Krill AI",
+          message: error instanceof Error ? error.message : "unknown error",
+        },
+      ];
+    }
+  })();
+  const [codexSnapshot, zenmuxSnapshot, zenmuxPaygSnapshot, krillSnapshots] = await Promise.all([
+    codex,
+    zenmux,
+    zenmuxPayg,
+    krill,
+  ]);
+  return [codexSnapshot, zenmuxSnapshot, zenmuxPaygSnapshot, ...krillSnapshots];
 }

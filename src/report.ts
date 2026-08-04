@@ -19,7 +19,16 @@ function remaining(ms: number): string {
 }
 
 function label(kind: WindowKind): string {
-  return kind === "5h" ? "5小时窗口" : "7天窗口";
+  switch (kind) {
+    case "1d":
+      return "24小时窗口";
+    case "5h":
+      return "5小时窗口";
+    case "7d":
+      return "7天窗口";
+    case "cycle":
+      return "周期窗口";
+  }
 }
 
 function color(value: number): FontColor {

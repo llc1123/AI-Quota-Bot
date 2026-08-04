@@ -1,5 +1,5 @@
 import { isRecord } from "./http";
-import type { ProviderSnapshot } from "./providers";
+import type { ProviderSnapshot, QuotaWindow } from "./providers";
 
 const LAST_REPORT_BASELINE_KEY = "last-report-baseline";
 const USAGE_CHANGE_THRESHOLD = 5;
@@ -22,13 +22,19 @@ function dollars(value: string): number | undefined {
   return Number.isFinite(amount) ? amount : undefined;
 }
 
+function windowKey(provider: string, window: QuotaWindow): string {
+  return window.id === undefined
+    ? `${provider}:${window.kind}`
+    : `${provider}:${window.kind}:${window.id}`;
+}
+
 export function reportBaseline(snapshots: readonly ProviderSnapshot[]): ReportBaseline {
   const windows: Record<string, number> = {};
   const balances: Record<string, number> = {};
   for (const snapshot of snapshots) {
     if (snapshot.kind === "windowed") {
       for (const window of snapshot.windows) {
-        windows[`${snapshot.provider}:${window.kind}`] = window.usagePercent;
+        windows[windowKey(snapshot.provider, window)] = window.usagePercent;
       }
       continue;
     }

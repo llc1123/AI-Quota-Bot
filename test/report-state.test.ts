@@ -107,6 +107,29 @@ describe("scheduled report state", () => {
     expect(baseline).toEqual({ windows: { "Codex:7d": 3 }, balances: { "Krill AI": 1 } });
   });
 
+  it("keeps duplicate Krill cycle-card windows distinct by subscription id", () => {
+    // Given
+    const snapshots = [
+      {
+        kind: "windowed",
+        provider: "Krill AI",
+        windows: [
+          { id: "weekly-a", kind: "cycle", usagePercent: 25, timePercent: 50, remainingMs: 60_000 },
+          { id: "weekly-b", kind: "cycle", usagePercent: 75, timePercent: 50, remainingMs: 60_000 },
+        ],
+      },
+    ] as const;
+
+    // When
+    const baseline = reportBaseline(snapshots);
+
+    // Then
+    expect(baseline.windows).toEqual({
+      "Krill AI:cycle:weekly-a": 25,
+      "Krill AI:cycle:weekly-b": 75,
+    });
+  });
+
   it("keeps the last sent baseline until a scheduled report actually sends", async () => {
     // Given
     const store = new Map<string, string>();
