@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 OPENAI_USAGE_URL: Final = "https://chatgpt.com/backend-api/wham/usage"
+KRILL_SUBSCRIPTION_URL: Final = "https://www.krill-code.com/api/subscription"
 UPSTREAM_TIMEOUT_SECONDS: Final = 30
 
 
@@ -32,7 +33,7 @@ class CodexUsageRelay(BaseHTTPRequestHandler):
         if self.path == "/health":
             _json(self, HTTPStatus.OK, {"ready": "true"})
             return
-        if self.path != "/wham/usage":
+        if self.path not in ("/wham/usage", "/krill/subscription"):
             _json(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
 
@@ -41,13 +42,16 @@ class CodexUsageRelay(BaseHTTPRequestHandler):
             _json(self, HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
 
+        provider = "krill" if self.path == "/krill/subscription" else "openai"
         authorization = self.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
-            _json(self, HTTPStatus.UNAUTHORIZED, {"error": "missing_openai_token"})
+            _json(self, HTTPStatus.UNAUTHORIZED, {"error": f"missing_{provider}_token"})
             return
 
         request = Request(
-            os.environ.get("OPENAI_USAGE_URL", OPENAI_USAGE_URL),
+            KRILL_SUBSCRIPTION_URL
+            if provider == "krill"
+            else os.environ.get("OPENAI_USAGE_URL", OPENAI_USAGE_URL),
             headers={"Authorization": authorization, "User-Agent": "codex-cli"},
             method="GET",
         )
@@ -59,7 +63,7 @@ class CodexUsageRelay(BaseHTTPRequestHandler):
         except HTTPError as error:
             _send(self, error.code, error.read(), error.headers.get("content-type", "text/plain"))
         except URLError:
-            _json(self, HTTPStatus.BAD_GATEWAY, {"error": "openai_unreachable"})
+            _json(self, HTTPStatus.BAD_GATEWAY, {"error": f"{provider}_unreachable"})
 
 
 if __name__ == "__main__":

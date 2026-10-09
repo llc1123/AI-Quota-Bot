@@ -1,8 +1,11 @@
-# Codex usage relay
+# Provider usage relay
 
-Minimal Cloud Run service for one endpoint only: `GET /wham/usage`.
+Minimal Cloud Run service with two fixed upstream routes:
 
-It requires `X-Relay-Token`, reads the OpenAI access token from `Authorization`, then creates a clean upstream request to ChatGPT with only:
+- `GET /wham/usage` → OpenAI Codex usage.
+- `GET /krill/subscription` → `https://www.krill-code.com/api/subscription`.
+
+Both routes require `X-Relay-Token`, read the provider token from `Authorization`, and create an upstream request with only:
 
 - `Authorization: Bearer <token>`
 - `User-Agent: codex-cli`
@@ -23,3 +26,10 @@ Worker config:
 CODEX_USAGE_RELAY_URL="https://<service-url>/wham/usage"
 CODEX_USAGE_RELAY_TOKEN="same-random-token"
 ```
+
+When this pair is configured, Krill collection uses `/krill/subscription` on the
+same relay origin directly, with a 20-second Worker timeout. Without the pair,
+Krill retains direct collection using `KRILL_API_BASE`. The relay fixes Krill's
+upstream to the URL above; it does not accept caller-supplied upstream URLs.
+This avoids the observed pre-response timeout from Workers running in AMS by
+using the existing Tokyo Cloud Run service. Codex retains its existing fallback behavior.
