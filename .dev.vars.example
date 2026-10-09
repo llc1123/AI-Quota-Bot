@@ -8,6 +8,10 @@ TELEGRAM_BOT_TOKEN="123456789:replace-with-botfather-token"
 TELEGRAM_WEBHOOK_SECRET="replace_with_random_letters_numbers_underscores_or_hyphens"
 TELEGRAM_ALLOWED_CHAT_IDS="-1001234567890"
 
+# Krill API base（仅 base URL，路径 /api/subscription 写死在代码中）。
+# 默认 https://www.krill-code.com ，必须带 www 子域（apex 返回 502）。
+# KRILL_API_BASE="https://www.krill-code.com"
+
 # Relay 由 gcloud/Cloud Run 首次部署后写入 Cloudflare Worker secret。
 # CODEX_USAGE_RELAY_URL="https://codex-usage-relay-xxx.a.run.app/wham/usage"
 # CODEX_USAGE_RELAY_TOKEN="replace-with-a-long-random-value"
