@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-15",
   "vars": {
-    "TELEGRAM_BOT_USERNAME": "llc_ai_usage_bot"
+    "TELEGRAM_BOT_USERNAME": "llc_ai_usage_bot",
+    "KRILL_API_BASE": "https://www.krill-code.com"
   },
   "triggers": {
     "crons": ["*/10 * * * *"]
