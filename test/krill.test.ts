@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { KRILL_SUBSCRIPTION_URL } from "../src/env";
+import { KRILL_API_BASE, krillApiBase } from "../src/env";
+import { joinUrl } from "../src/http";
 import { parseKrillBalance, parseKrillCycleWindows } from "../src/providers";
 
 describe("Krill provider parsers", () => {
@@ -148,8 +149,19 @@ describe("Krill provider parsers", () => {
     expect(windows[9]?.id).toBeUndefined();
   });
 
-  it("uses the final API host so Authorization survives the request", () => {
+  it("targets the www.krill-code.com host directly so Authorization survives the request", () => {
     // Given / When / Then
-    expect(KRILL_SUBSCRIPTION_URL).toBe("https://www.krill-ai.net/api/subscription");
+    expect(KRILL_API_BASE).toBe("https://www.krill-code.com");
+    expect(joinUrl(krillApiBase({}), "/api/subscription")).toBe(
+      "https://www.krill-code.com/api/subscription",
+    );
+  });
+
+  it("lets KRILL_API_BASE override the base url but keep the path fixed", () => {
+    // Given / When / Then
+    expect(krillApiBase({ KRILL_API_BASE: "https://staging.krill.example/" })).toBe(
+      "https://staging.krill.example/",
+    );
+    expect(krillApiBase({ KRILL_API_BASE: "  " })).toBe(KRILL_API_BASE);
   });
 });

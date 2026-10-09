@@ -21,8 +21,13 @@ export async function fetchJson(
   url: string,
   init?: RequestInit,
   requestTarget = url,
+  timeoutMs?: number,
 ): Promise<unknown> {
-  const response = await fetch(url, init);
+  const requestInit =
+    timeoutMs === undefined || init?.signal !== undefined
+      ? init
+      : { ...init, signal: AbortSignal.timeout(timeoutMs) };
+  const response = await fetch(url, requestInit);
   const text = await response.text();
   if (!response.ok)
     throw new Error(`${init?.method ?? "GET"} ${requestTarget} failed: ${response.status} ${text}`);

@@ -1,4 +1,4 @@
-import { codexStub, KRILL_SUBSCRIPTION_URL, requiredEnv, ZENMUX_API_BASE } from "./env";
+import { codexStub, codexUsageRelay, krillApiBase, requiredEnv, ZENMUX_API_BASE } from "./env";
 import { asNumber, asString, fetchJson, isRecord, joinUrl } from "./http";
 import { parseKrillBalance, parseKrillCycleWindows } from "./krill";
 
@@ -6,6 +6,8 @@ export { parseKrillBalance, parseKrillCycleWindows } from "./krill";
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const PROVIDER_FETCH_TIMEOUT_MS = 3_000;
+const KRILL_FETCH_TIMEOUT_MS = 20_000;
 
 export type WindowKind = "1d" | "5h" | "7d" | "cycle";
 
@@ -176,22 +178,40 @@ export async function collectSnapshots(
       {
         headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
       },
+      undefined,
+      PROVIDER_FETCH_TIMEOUT_MS,
     );
     return { kind: "windowed", provider: "ZenMux", windows: parseZenmuxSubscription(raw, nowMs) };
   });
   const zenmuxPayg = provider({ kind: "error", provider: "ZenMux PAYG", message: "" }, async () => {
-    const raw = await fetchJson(joinUrl(ZENMUX_API_BASE, "/api/v1/management/payg/balance"), {
-      headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
-    });
+    const raw = await fetchJson(
+      joinUrl(ZENMUX_API_BASE, "/api/v1/management/payg/balance"),
+      {
+        headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
+      },
+      undefined,
+      PROVIDER_FETCH_TIMEOUT_MS,
+    );
     const balance = parseZenmuxPaygBalance(raw);
     if (!balance) throw new Error("ZenMux PAYG balance field not found");
     return { kind: "balance", provider: "ZenMux", balance };
   });
   const krill = (async (): Promise<readonly ProviderSnapshot[]> => {
     try {
-      const raw = await fetchJson(KRILL_SUBSCRIPTION_URL, {
-        headers: { authorization: `Bearer ${requiredEnv(env, "KRILL_JWT")}` },
-      });
+      const relay = codexUsageRelay(env);
+      const raw = await fetchJson(
+        relay
+          ? new URL("/krill/subscription", relay.url).href
+          : joinUrl(krillApiBase(env), "/api/subscription"),
+        {
+          headers: {
+            authorization: `Bearer ${requiredEnv(env, "KRILL_JWT")}`,
+            ...(relay ? { "x-relay-token": relay.token } : {}),
+          },
+        },
+        "Krill subscription",
+        KRILL_FETCH_TIMEOUT_MS,
+      );
       const windows = parseKrillCycleWindows(raw, nowMs);
       const balance = parseKrillBalance(raw);
       const snapshots: ProviderSnapshot[] = [];
