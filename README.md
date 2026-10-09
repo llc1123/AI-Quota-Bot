@@ -36,6 +36,7 @@ Cloudflare secrets：
 Wrangler 变量：
 
 - `TELEGRAM_BOT_USERNAME`：不含 `@` 的 bot username，用于避免响应发给其他 bot 的命令；当前在 `wrangler.jsonc` 中配置。
+- `KRILL_API_BASE`：Krill API base URL（仅 base，路径 `/api/subscription` 写死在代码中）；当前在 `wrangler.jsonc` 中配置为 `https://www.krill-code.com`。必须使用带 `www` 的子域（apex 返回 502），且不可填旧域名 `www.krill-ai.net`（会 301 重定向到新域名，重定向过程会剥离 Authorization header）。未配置时回退到代码内同值默认。
 
 可选变量见 `.dev.vars.example`。
 
