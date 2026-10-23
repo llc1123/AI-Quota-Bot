@@ -1,4 +1,4 @@
-import { codexStub, codexUsageRelay, krillApiBase, requiredEnv, ZENMUX_API_BASE } from "./env";
+import { codexStub, codexUsageRelay, krillApiBase, requiredEnv, zenmuxApiBase } from "./env";
 import { asNumber, asString, fetchJson, isRecord, joinUrl } from "./http";
 import { parseKrillBalance, parseKrillCycleWindows } from "./krill";
 
@@ -174,7 +174,7 @@ export async function collectSnapshots(
   });
   const zenmux = provider({ kind: "error", provider: "ZenMux", message: "" }, async () => {
     const raw = await fetchJson(
-      joinUrl(ZENMUX_API_BASE, "/api/v1/management/subscription/detail"),
+      joinUrl(zenmuxApiBase(env), "/api/v1/management/subscription/detail"),
       {
         headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
       },
@@ -185,7 +185,7 @@ export async function collectSnapshots(
   });
   const zenmuxPayg = provider({ kind: "error", provider: "ZenMux PAYG", message: "" }, async () => {
     const raw = await fetchJson(
-      joinUrl(ZENMUX_API_BASE, "/api/v1/management/payg/balance"),
+      joinUrl(zenmuxApiBase(env), "/api/v1/management/payg/balance"),
       {
         headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
       },

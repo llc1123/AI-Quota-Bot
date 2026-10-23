@@ -3,7 +3,7 @@ import type { CodexUsageRelay } from "./codex-http";
 export const CODEX_ISSUER = "https://auth.openai.com";
 export const CODEX_API_BASE = "https://chatgpt.com/backend-api";
 export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-export const ZENMUX_API_BASE = "https://zenmux.ai";
+export const ZENMUX_API_BASE = "https://zenmux.dev";
 export const KRILL_API_BASE = "https://www.krill-code.com";
 
 export function textEnv(value: string | undefined, fallback = ""): string {
@@ -36,6 +36,10 @@ export function codexStub(env: Env): DurableObjectStub {
 
 export function krillApiBase(env: { KRILL_API_BASE?: string | undefined }): string {
   return textEnv(env.KRILL_API_BASE, KRILL_API_BASE);
+}
+
+export function zenmuxApiBase(env: { ZENMUX_API_BASE?: string | undefined }): string {
+  return textEnv(env.ZENMUX_API_BASE, ZENMUX_API_BASE);
 }
 
 export function codexUsageRelay(
