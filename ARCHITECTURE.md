@@ -96,7 +96,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 **Scheduled report (cron `*/10 * * * *`):**
 
 1. Cloudflare invokes `default.scheduled` — `src/index.ts`
-2. `report()` calls `collectSnapshots(env)`, which fans out Codex / ZenMux subscription / ZenMux PAYG / Krill reads in `Promise.all`; the Krill read uses the relay's `/krill/subscription` when the relay pair is configured (falling back to `KRILL_API_BASE`) with a 20s timeout — `src/providers.ts`
+2. `report()` calls `collectSnapshots(env)`, which fans out Codex / ZenMux / Krill reads in `Promise.all`; ZenMux requests pass through a per-isolate serial gate, and PAYG balance requests have a 5s minimum start interval because the balance endpoint rejects same-endpoint bursts. This is best-effort only and does not coordinate separate Worker isolates. The Krill read uses the relay's `/krill/subscription` when the relay pair is configured (falling back to `KRILL_API_BASE`) with a 20s timeout — `src/providers.ts`
 3. `shouldSendScheduledReport` loads the KV baseline and diffs usage/balance deltas against thresholds — `src/report-state.ts`
 4. If changed, `sendWecomMarkdown` posts `buildMarkdown(snapshots)` to the WeCom webhook — `src/wecom.ts`/`src/report.ts`
 5. `saveReportBaseline` writes the fresh baseline back to KV `REPORT_STATE` — `src/report-state.ts`
