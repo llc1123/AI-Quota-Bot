@@ -81,6 +81,11 @@ function line(window: QuotaWindow): string {
   return `> ${windowLabel(window)}：用量 ${bar(window.usagePercent, color(window.usagePercent))} ${percent(window.usagePercent)}；${suffix}`;
 }
 
+function balanceText(snapshot: Extract<ProviderSnapshot, { readonly kind: "balance" }>): string {
+  const { balance, breakdown } = snapshot;
+  return breakdown ? `${balance} (余额 ${breakdown.wallet}, 赠金 ${breakdown.welfare})` : balance;
+}
+
 export function buildMarkdown(
   snapshots: readonly ProviderSnapshot[],
   now = new Date(),
@@ -115,7 +120,7 @@ export function buildMarkdown(
   if (balances.length > 0) {
     parts.push(
       "\n**备用按量渠道**",
-      ...balances.map((snapshot) => `> ${snapshot.provider}：${snapshot.balance}`),
+      ...balances.map((snapshot) => `> ${snapshot.provider}：${balanceText(snapshot)}`),
     );
   }
   return parts.join("\n");
@@ -157,7 +162,7 @@ export function buildTelegramMessage(
   if (balances.length > 0) {
     parts.push(
       "\n备用按量渠道",
-      ...balances.map((snapshot) => `• ${snapshot.provider}：${snapshot.balance}`),
+      ...balances.map((snapshot) => `• ${snapshot.provider}：${balanceText(snapshot)}`),
     );
   }
   const message = Array.from(parts.join("\n"));

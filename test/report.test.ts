@@ -43,7 +43,12 @@ describe("buildMarkdown", () => {
           ],
         },
         { kind: "balance", provider: "ZenMux", balance: "$33.65" },
-        { kind: "balance", provider: "Krill AI", balance: "$364.06" },
+        {
+          kind: "balance",
+          provider: "Krill AI",
+          balance: "$364.06",
+          breakdown: { wallet: "$344.05", welfare: "$20.01" },
+        },
       ],
       now,
       "测试播报",
@@ -67,7 +72,7 @@ describe("buildMarkdown", () => {
     expect(markdown).not.toContain("时长");
     expect(markdown).toContain("**备用按量渠道**");
     expect(markdown).toContain("> ZenMux：$33.65");
-    expect(markdown).toContain("> Krill AI：$364.06");
+    expect(markdown).toContain("> Krill AI：$364.06 (余额 $344.05, 赠金 $20.01)");
     expect(markdown.indexOf("**备用按量渠道**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
     expect(markdown.indexOf("**Krill AI**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
     expect(markdown.indexOf("**Krill AI**")).toBeLessThan(markdown.indexOf("**ZenMux**"));
@@ -105,7 +110,12 @@ describe("buildTelegramMessage", () => {
             },
           ],
         },
-        { kind: "balance", provider: "Krill AI", balance: "$364.06" },
+        {
+          kind: "balance",
+          provider: "Krill AI",
+          balance: "$364.06",
+          breakdown: { wallet: "$344.05", welfare: "$20.01" },
+        },
         { kind: "error", provider: "ZenMux", message: "upstream unavailable" },
       ],
       now,
@@ -116,7 +126,7 @@ describe("buildTelegramMessage", () => {
     expect(message).toContain("Codex\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
     expect(message).toContain("Krill AI\n• Krill Pro 周卡：已用 25.0%；剩余 3天12小时");
     expect(message).toContain("ZenMux\n• 获取失败：upstream unavailable");
-    expect(message).toContain("备用按量渠道\n• Krill AI：$364.06");
+    expect(message).toContain("备用按量渠道\n• Krill AI：$364.06 (余额 $344.05, 赠金 $20.01)");
     expect(message).not.toContain("<font");
     expect(message).not.toContain("**");
     expect(message.indexOf("Krill AI\n• Krill Pro 周卡")).toBeGreaterThan(
