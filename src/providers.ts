@@ -8,6 +8,12 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const PROVIDER_FETCH_TIMEOUT_MS = 3_000;
 const KRILL_FETCH_TIMEOUT_MS = 20_000;
+const ZENMUX_PAYG_MIN_INTERVAL_MS = 5_000;
+
+let zenmuxRequestTail: Promise<void> = Promise.resolve();
+let zenmuxPaygLastStartMs: number | undefined;
+
+type ZenmuxEndpoint = "subscription" | "payg";
 
 export type WindowKind = "1d" | "5h" | "7d" | "cycle";
 
@@ -167,10 +173,85 @@ async function provider<T extends ProviderSnapshot>(
   }
 }
 
+async function withZenmuxRequest<T>(request: (queueWaitMs: number) => Promise<T>): Promise<T> {
+  const previous = zenmuxRequestTail;
+  const queuedAtMs = Date.now();
+  let release!: () => void;
+  zenmuxRequestTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await request(Date.now() - queuedAtMs);
+  } finally {
+    release();
+  }
+}
+
+async function waitForZenmuxPaygSlot(): Promise<void> {
+  const lastStartMs = zenmuxPaygLastStartMs;
+  if (lastStartMs !== undefined) {
+    const waitMs = lastStartMs + ZENMUX_PAYG_MIN_INTERVAL_MS - Date.now();
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  zenmuxPaygLastStartMs = Date.now();
+}
+
+async function fetchZenmuxJson(
+  endpoint: ZenmuxEndpoint,
+  env: Env,
+  collectionId: string,
+  queueWaitMs: number,
+  path: string,
+): Promise<unknown> {
+  const url = joinUrl(zenmuxApiBase(env), path);
+  const startedAtMs = Date.now();
+  console.log({
+    event: "zenmux_request_start",
+    collectionId,
+    endpoint,
+    queueWaitMs,
+    startedAtMs,
+  });
+  let status: number | undefined;
+  try {
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
+      signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
+    });
+    status = response.status;
+    const body = await response.text();
+    console.log({
+      event: "zenmux_request_end",
+      collectionId,
+      endpoint,
+      status,
+      durationMs: Date.now() - startedAtMs,
+      retryAfter: response.headers.get("retry-after"),
+      requestId: response.headers.get("x-zenmux-requestid"),
+      cfRay: response.headers.get("cf-ray"),
+    });
+    if (!response.ok) throw new Error(`GET ${url} failed: ${response.status} ${body}`);
+    if (body.trim() === "") return undefined;
+    return JSON.parse(body);
+  } catch (error) {
+    console.log({
+      event: "zenmux_request_error",
+      collectionId,
+      endpoint,
+      status,
+      durationMs: Date.now() - startedAtMs,
+      error: error instanceof Error ? error.name : "unknown",
+    });
+    throw error;
+  }
+}
+
 export async function collectSnapshots(
   env: Env,
   nowMs = Date.now(),
 ): Promise<readonly ProviderSnapshot[]> {
+  const collectionId = crypto.randomUUID();
   const codex = provider({ kind: "error", provider: "Codex", message: "" }, async () => {
     const raw = await codexStub(env)
       .fetch("https://codex-auth.internal/usage")
@@ -178,25 +259,28 @@ export async function collectSnapshots(
     return { kind: "windowed", provider: "Codex", windows: parseCodexUsage(raw, nowMs) };
   });
   const zenmux = provider({ kind: "error", provider: "ZenMux", message: "" }, async () => {
-    const raw = await fetchJson(
-      joinUrl(zenmuxApiBase(env), "/api/v1/management/subscription/detail"),
-      {
-        headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
-      },
-      undefined,
-      PROVIDER_FETCH_TIMEOUT_MS,
+    const raw = await withZenmuxRequest((queueWaitMs) =>
+      fetchZenmuxJson(
+        "subscription",
+        env,
+        collectionId,
+        queueWaitMs,
+        "/api/v1/management/subscription/detail",
+      ),
     );
     return { kind: "windowed", provider: "ZenMux", windows: parseZenmuxSubscription(raw, nowMs) };
   });
   const zenmuxPayg = provider({ kind: "error", provider: "ZenMux PAYG", message: "" }, async () => {
-    const raw = await fetchJson(
-      joinUrl(zenmuxApiBase(env), "/api/v1/management/payg/balance"),
-      {
-        headers: { authorization: `Bearer ${requiredEnv(env, "ZENMUX_MANAGEMENT_KEY")}` },
-      },
-      undefined,
-      PROVIDER_FETCH_TIMEOUT_MS,
-    );
+    const raw = await withZenmuxRequest(async (queueWaitMs) => {
+      await waitForZenmuxPaygSlot();
+      return fetchZenmuxJson(
+        "payg",
+        env,
+        collectionId,
+        queueWaitMs,
+        "/api/v1/management/payg/balance",
+      );
+    });
     const balance = parseZenmuxPaygBalance(raw);
     if (!balance) throw new Error("ZenMux PAYG balance field not found");
     return { kind: "balance", provider: "ZenMux", balance };

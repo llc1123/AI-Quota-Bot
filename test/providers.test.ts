@@ -1,10 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { codexStub } from "../src/env";
 import {
   codexUsageJson,
+  collectSnapshots,
   parseCodexUsage,
   parseZenmuxPaygBalance,
   parseZenmuxSubscription,
 } from "../src/providers";
+
+vi.mock("../src/env", () => ({
+  codexStub: vi.fn(),
+  codexUsageRelay: vi.fn(() => undefined),
+  krillApiBase: vi.fn(() => "https://krill.test"),
+  requiredEnv: vi.fn(() => "test-key"),
+  zenmuxApiBase: vi.fn(() => "https://zenmux.test"),
+}));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("quota provider parsers", () => {
   it("parses Codex wham usage rate limit windows", () => {
@@ -185,5 +200,39 @@ describe("quota provider parsers", () => {
 
     // Then
     expect(balance).toBe("$33.65");
+  });
+
+  it("paces concurrent ZenMux PAYG requests by five seconds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    vi.mocked(codexStub).mockReturnValue({
+      fetch: vi.fn().mockResolvedValue(Response.json({ rate_limit: {} })),
+    } as unknown as DurableObjectStub);
+    const paygStarts: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/management/payg/balance")) {
+          paygStarts.push(Date.now());
+          return Response.json({ data: { total_credits: 1 } });
+        }
+        if (url.endsWith("/api/v1/management/subscription/detail")) {
+          return Response.json({ data: {} });
+        }
+        return Response.json({});
+      }),
+    );
+    const env = {} as unknown as Env;
+
+    const reports = Promise.all([collectSnapshots(env), collectSnapshots(env)]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(paygStarts).toEqual([0]);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(paygStarts).toEqual([0]);
+    await vi.advanceTimersByTimeAsync(1);
+    await reports;
+
+    expect(paygStarts).toEqual([0, 5_000]);
   });
 });
