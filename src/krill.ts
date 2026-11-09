@@ -1,5 +1,5 @@
 import { isRecord } from "./http";
-import type { QuotaWindow, WindowKind } from "./providers";
+import type { ProviderSnapshot, QuotaWindow, WindowKind } from "./providers";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * ONE_DAY_MS;
@@ -119,10 +119,17 @@ export function parseKrillCycleWindows(raw: unknown, nowMs = Date.now()): readon
   });
 }
 
-export function parseKrillBalance(raw: unknown): string | undefined {
+export function parseKrillBalance(
+  raw: unknown,
+): Extract<ProviderSnapshot, { readonly kind: "balance" }> | undefined {
   if (!isRecord(raw) || !isRecord(raw["data"])) return undefined;
-  const paid = numberLike(raw["data"]["credit_balance_usd"]);
-  const welfare = numberLike(raw["data"]["welfare_balance_usd"]);
-  if (paid === undefined && welfare === undefined) return undefined;
-  return `$${((paid ?? 0) + (welfare ?? 0)).toFixed(2)}`;
+  const total = numberLike(raw["data"]["credit_balance_usd"]);
+  const welfare = numberLike(raw["data"]["welfare_balance_usd"]) ?? 0;
+  if (total === undefined) return undefined;
+  return {
+    kind: "balance",
+    provider: "Krill AI",
+    balance: `$${total.toFixed(2)}`,
+    breakdown: { wallet: `$${(total - welfare).toFixed(2)}`, welfare: `$${welfare.toFixed(2)}` },
+  };
 }

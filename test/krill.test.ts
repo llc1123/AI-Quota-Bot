@@ -4,16 +4,30 @@ import { joinUrl } from "../src/http";
 import { parseKrillBalance, parseKrillCycleWindows } from "../src/providers";
 
 describe("Krill provider parsers", () => {
-  it("parses subscription balances from numeric strings", () => {
-    // Given
-    const payload = { data: { credit_balance_usd: "364.055239", welfare_balance_usd: "0" } };
+  it.each([
+    ["364.055239", "20.005239", "$364.06", "$344.05", "$20.01"],
+    [100, 25, "$100.00", "$75.00", "$25.00"],
+    [0, 0, "$0.00", "$0.00", "$0.00"],
+    [100, 100, "$100.00", "$0.00", "$100.00"],
+    [100, undefined, "$100.00", "$100.00", "$0.00"],
+  ])(
+    "splits total credit %s and welfare %s into wallet and gift balances",
+    (credit, welfare, total, wallet, gift) => {
+      // Given
+      const payload = { data: { credit_balance_usd: credit, welfare_balance_usd: welfare } };
 
-    // When
-    const balance = parseKrillBalance(payload);
+      // When
+      const balance = parseKrillBalance(payload);
 
-    // Then
-    expect(balance).toBe("$364.06");
-  });
+      // Then
+      expect(balance).toEqual({
+        kind: "balance",
+        provider: "Krill AI",
+        balance: total,
+        breakdown: { wallet, welfare: gift },
+      });
+    },
+  );
 
   it("parses active cycle-card quota windows", () => {
     // Given

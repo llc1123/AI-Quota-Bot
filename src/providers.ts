@@ -27,7 +27,12 @@ export type ProviderSnapshot =
       readonly provider: "Codex" | "ZenMux" | "Krill AI";
       readonly windows: readonly QuotaWindow[];
     }
-  | { readonly kind: "balance"; readonly provider: "ZenMux" | "Krill AI"; readonly balance: string }
+  | {
+      readonly kind: "balance";
+      readonly provider: "ZenMux" | "Krill AI";
+      readonly balance: string;
+      readonly breakdown?: { readonly wallet: string; readonly welfare: string };
+    }
   | { readonly kind: "error"; readonly provider: string; readonly message: string };
 
 function numberLike(value: unknown): number | undefined {
@@ -216,7 +221,7 @@ export async function collectSnapshots(
       const balance = parseKrillBalance(raw);
       const snapshots: ProviderSnapshot[] = [];
       if (windows.length > 0) snapshots.push({ kind: "windowed", provider: "Krill AI", windows });
-      if (balance) snapshots.push({ kind: "balance", provider: "Krill AI", balance });
+      if (balance) snapshots.push(balance);
       if (snapshots.length === 0) throw new Error("Krill subscription fields not found");
       return snapshots;
     } catch (error) {
