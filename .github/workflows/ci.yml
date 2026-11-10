@@ -32,5 +32,8 @@ jobs:
       - name: Compile relay
         run: python -m py_compile relay/codex_usage_relay.py
 
+      - name: Test relay
+        run: python -m unittest discover -s relay -p 'test_*.py'
+
       - name: Build relay image
         run: docker build -t codex-usage-relay:ci relay

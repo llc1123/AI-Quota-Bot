@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAuthState } from "../src/codex-auth";
 import { type SealedBox, sealJson } from "../src/crypto";
 
@@ -46,7 +46,172 @@ function requestUrl(input: RequestInfo | URL): string {
   return input instanceof Request ? input.url : input.toString();
 }
 
+const encryptionKey = btoa("0123456789abcdef0123456789abcdef");
+const authEnv = {
+  CODEX_TOKEN_ENCRYPTION_KEY: encryptionKey,
+  CODEX_USAGE_RELAY_TOKEN: "",
+  CODEX_USAGE_RELAY_URL: "",
+  WECOM_WEBHOOK_URL: "",
+};
+
+function probeRequest(body: unknown): Request {
+  return new Request("https://codex-auth.internal/probe", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
 describe("Codex auth durable object", () => {
+  it("refreshes once for three parallel probes and returns only their generated text", async () => {
+    const storage = new TestCodexStorage(
+      await sealJson(
+        {
+          accessToken: "old-private-access",
+          refreshToken: "old-private-refresh",
+          accountId: "account-1",
+          expiresAt: Date.now() - 60_000,
+        },
+        encryptionKey,
+      ),
+    );
+    const auth = new CodexAuthState(
+      { storage },
+      {
+        ...authEnv,
+        CODEX_USAGE_RELAY_URL: "https://relay.example/wham/usage",
+        CODEX_USAGE_RELAY_TOKEN: "private-relay",
+      },
+    );
+    let refreshes = 0;
+    const inferenceUrls: string[] = [];
+    const inferenceHeaders: Headers[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        if (requestUrl(input) === "https://auth.openai.com/oauth/token") {
+          refreshes += 1;
+          return Response.json({
+            access_token: "new-private-access",
+            refresh_token: "rotated-private-refresh",
+            expires_in: 3600,
+          });
+        }
+        inferenceUrls.push(requestUrl(input));
+        inferenceHeaders.push(new Headers(init?.headers));
+        return new Response(
+          'data: {"type":"response.output_text.delta","delta":"12,34,56"}\n\n' +
+            'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+        );
+      }),
+    );
+
+    const responses = await Promise.all(
+      [0, 1, 2].map(() => auth.fetch(probeRequest({ model: "gpt-5", prompt: "numbers" }))),
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    await expect(Promise.all(responses.map((response) => response.json()))).resolves.toEqual([
+      { text: "12,34,56" },
+      { text: "12,34,56" },
+      { text: "12,34,56" },
+    ]);
+    expect(refreshes).toBe(1);
+    expect(inferenceUrls).toEqual(Array(3).fill("https://relay.example/codex/responses"));
+    expect(
+      inferenceHeaders.map((headers) => [
+        headers.get("authorization"),
+        headers.get("chatgpt-account-id"),
+        headers.get("x-relay-token"),
+      ]),
+    ).toEqual([
+      ["Bearer new-private-access", "account-1", "private-relay"],
+      ["Bearer new-private-access", "account-1", "private-relay"],
+      ["Bearer new-private-access", "account-1", "private-relay"],
+    ]);
+  });
+
+  it.each([
+    { model: "", prompt: "numbers" },
+    { model: "gpt-5", prompt: "" },
+    { model: "x".repeat(201), prompt: "numbers" },
+    { model: "gpt-5", prompt: "x".repeat(16_385) },
+    { model: 12, prompt: "numbers" },
+    { model: "gpt-5", prompt: "numbers", accessToken: "injected" },
+  ])("rejects invalid probe input %# before making upstream requests", async (body) => {
+    const auth = new CodexAuthState({ storage: new TestCodexStorage(undefined) }, authEnv);
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await auth.fetch(probeRequest(body));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_probe" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed probe JSON", async () => {
+    const auth = new CodexAuthState({ storage: new TestCodexStorage(undefined) }, authEnv);
+
+    const response = await auth.fetch(
+      new Request("https://codex-auth.internal/probe", { method: "POST", body: "{" }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_probe" });
+  });
+
+  it("rejects anonymous probes without starting login or inference", async () => {
+    const auth = new CodexAuthState({ storage: new TestCodexStorage(undefined) }, authEnv);
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await auth.fetch(probeRequest({ model: "gpt-5", prompt: "numbers" }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "codex_not_authenticated" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["refresh", "inference"])(
+    "sanitizes %s failures at the internal probe boundary",
+    async (failure) => {
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const storage = new TestCodexStorage(
+        await sealJson(
+          {
+            accessToken: "private-access",
+            refreshToken: "private-refresh",
+            expiresAt: failure === "refresh" ? 0 : Date.now() + 3600_000,
+          },
+          encryptionKey,
+        ),
+      );
+      const auth = new CodexAuthState({ storage }, authEnv);
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response("private-access private-refresh upstream body", { status: 401 }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const response = await auth.fetch(probeRequest({ model: "gpt-5", prompt: "numbers" }));
+
+      expect(response.status).toBe(502);
+      await expect(response.json()).resolves.toEqual({
+        error: failure === "refresh" ? "codex_probe_error" : "Codex probe http (HTTP 401)",
+      });
+      expect(warning).toHaveBeenCalledOnce();
+      expect(JSON.stringify(warning.mock.calls)).not.toMatch(/private-access|private-refresh/);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("starts a new device login when the stored refresh token is expired", async () => {
     // Given
     const encryptionKey = btoa("0123456789abcdef0123456789abcdef");

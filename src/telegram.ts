@@ -1,8 +1,11 @@
 import { z } from "zod";
-import { fetchJson, json } from "./http";
+import { json } from "./http";
+import type { TelegramReply } from "./telegram-api";
 
-const TELEGRAM_API_BASE = "https://api.telegram.org";
+export { sendTelegramMessage, TelegramApiError, type TelegramReply } from "./telegram-api";
+
 const QUOTA_COMMAND = /^\/quota(?:@([A-Za-z0-9_]+))?$/i;
+const DETECT_COMMAND = /^\/detect(?:@([A-Za-z0-9_]+))?(?:\s+(.+))?$/i;
 
 const telegramUpdateSchema = z.object({
   update_id: z.number().int(),
@@ -19,16 +22,9 @@ const telegramUpdateSchema = z.object({
     .optional(),
 });
 
-const telegramApiResponseSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true) }),
-  z.object({ ok: z.literal(false) }),
-]);
-
-export type TelegramReply = {
-  readonly chatId: number;
-  readonly messageId: number;
-  readonly messageThreadId?: number;
-  readonly text: string;
+export type TelegramDetection = Omit<TelegramReply, "text"> & {
+  readonly updateId: number;
+  readonly model: string;
 };
 
 export type TelegramWebhookConfig = {
@@ -45,7 +41,8 @@ export type TelegramWebhookConfigInput = {
 
 export type TelegramCommandServices = {
   readonly getQuotaMessage: () => Promise<string>;
-  readonly sendMessage: (reply: TelegramReply) => Promise<void>;
+  readonly sendMessage: (reply: TelegramReply) => Promise<unknown>;
+  readonly startDetection: (command: TelegramDetection) => Promise<void>;
   readonly waitUntil: (task: Promise<void>) => void;
 };
 
@@ -58,18 +55,6 @@ export class TelegramConfigurationError extends Error {
   ) {
     super(`${field} 配置无效`);
     this.name = "TelegramConfigurationError";
-  }
-}
-
-export class TelegramApiError extends Error {
-  constructor(readonly code: "request_failed" | "invalid_response" | "api_rejected") {
-    const messages = {
-      request_failed: "Telegram API 请求失败",
-      invalid_response: "Telegram API 返回无效响应",
-      api_rejected: "Telegram API 拒绝请求",
-    } as const;
-    super(messages[code]);
-    this.name = "TelegramApiError";
   }
 }
 
@@ -133,50 +118,40 @@ export async function handleTelegramWebhook(
     message === undefined ||
     (message.chat.type !== "group" && message.chat.type !== "supergroup") ||
     !config.allowedChatIds.has(String(message.chat.id)) ||
-    message.text === undefined ||
-    !isQuotaCommand(message.text, config.botUsername)
+    message.text === undefined
   ) {
     return json({ ok: true });
   }
 
-  services.waitUntil(
-    services.getQuotaMessage().then((text) =>
-      services.sendMessage({
-        chatId: message.chat.id,
-        messageId: message.message_id,
-        ...(message.message_thread_id === undefined
-          ? {}
-          : { messageThreadId: message.message_thread_id }),
-        text,
+  const reply = {
+    chatId: message.chat.id,
+    messageId: message.message_id,
+    ...(message.message_thread_id === undefined
+      ? {}
+      : { messageThreadId: message.message_thread_id }),
+  };
+  const detect = DETECT_COMMAND.exec(message.text.trim());
+  if (
+    detect &&
+    (detect[1] === undefined || detect[1].toLowerCase() === config.botUsername.toLowerCase())
+  ) {
+    const model = detect[2]?.trim();
+    if (model && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(model)) {
+      // Persist the job before acknowledging; Telegram can redeliver a failed webhook safely.
+      await services.startDetection({ ...reply, updateId: parsed.data.update_id, model });
+    } else {
+      services.waitUntil(
+        (async () => {
+          await services.sendMessage({ ...reply, text: "用法：/detect gpt-5.6-luna" });
+        })(),
+      );
+    }
+  } else if (isQuotaCommand(message.text, config.botUsername)) {
+    services.waitUntil(
+      services.getQuotaMessage().then(async (text) => {
+        await services.sendMessage({ ...reply, text });
       }),
-    ),
-  );
-  return json({ ok: true });
-}
-
-export async function sendTelegramMessage(token: string, reply: TelegramReply): Promise<void> {
-  let payload: unknown;
-  try {
-    payload = await fetchJson(
-      `${TELEGRAM_API_BASE}/bot${token}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          chat_id: reply.chatId,
-          text: reply.text,
-          ...(reply.messageThreadId === undefined
-            ? {}
-            : { message_thread_id: reply.messageThreadId }),
-          reply_parameters: { message_id: reply.messageId },
-        }),
-      },
-      "Telegram sendMessage",
     );
-  } catch {
-    throw new TelegramApiError("request_failed");
   }
-  const response = telegramApiResponseSchema.safeParse(payload);
-  if (!response.success) throw new TelegramApiError("invalid_response");
-  if (!response.data.ok) throw new TelegramApiError("api_rejected");
+  return json({ ok: true });
 }
