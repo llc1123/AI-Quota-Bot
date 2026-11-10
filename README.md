@@ -18,7 +18,19 @@ npm run dev
 - `POST /run`：立即发送播报，需管理员令牌。
 - `POST /codex/login`：触发 Codex 设备码登录并推送企业微信提示，需管理员令牌。
 - `GET /codex/status`：查看 Codex 登录状态，需管理员令牌。
-- `POST /telegram/webhook`：接收 Telegram webhook；仅响应 allowlist 群聊中的 `/quota` 或 `/quota@bot_username`。
+- `POST /telegram/webhook`：接收 Telegram webhook；响应 allowlist 群聊中的 `/quota`、`/detect <模型名>`，均可带 `@bot_username`。
+
+## 模型指纹检测
+
+在允许的 Telegram 群聊中发送 `/detect gpt-5.6-luna`。机器人先回复“模型检测中”，完成后编辑同一条消息，显示请求模型、最匹配的模型和是否一致。请求失败或有效回答不足三条时显示检测失败。
+
+匹配到 `gpt-6-astra` 指纹时，输出显示为 `gpt-6-astra/gpt-6.1-sol`；输入这两个模型中的任意一个都判定一致，因为此指纹不能区分两者。
+
+检测复用 `CODEX_AUTH` 内保存的 Codex OAuth 凭证，以 `low` 推理强度并行发送三个独立数字序列探针，不自动重试模型请求。检测由独立的 `DetectionJob` Durable Object alarm 执行，不受 webhook 回复后 30 秒的 `waitUntil` 限制；重复 webhook 按群聊和 update ID 去重。
+
+配置现有 `CODEX_USAGE_RELAY_URL` / `CODEX_USAGE_RELAY_TOKEN` 时，推理请求使用同一 relay 的固定 `/codex/responses` 路由，避开已实测的 Worker 直连 403 HTML 拦截；需部署包含该路由的 relay 版本。未配置时直连 Codex Responses API。
+
+算法和固定版本指纹库来自 MIT 许可的 [lm-detector](https://github.com/Ikaleio/lm-detector)，版本及归属见 `src/detector/`。结果属于参考库内的统计匹配，不是模型身份或路由证明；参考库之外的模型也可能匹配到已有候选。当前 Worker 未压缩包体约 6.5 MiB，符合 Cloudflare 当前 64 MiB 包体限制。
 
 ## 配置
 
@@ -59,7 +71,7 @@ export TELEGRAM_BOT_TOKEN="..."
 export TELEGRAM_WEBHOOK_SECRET="..."
 
 curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands" \
-  --data-urlencode 'commands=[{"command":"quota","description":"查看当前 AI 额度"}]' \
+  --data-urlencode 'commands=[{"command":"quota","description":"查看当前 AI 额度"},{"command":"detect","description":"检测模型指纹：/detect 模型名"}]' \
   --data-urlencode 'scope={"type":"all_group_chats"}'
 
 curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
@@ -68,7 +80,7 @@ curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   --data-urlencode 'allowed_updates=["message"]'
 ```
 
-Webhook 会校验 Telegram secret header，并静默忽略私聊、频道、非 allowlist 群聊和非 `/quota` 消息。
+Webhook 会校验 Telegram secret header，并静默忽略私聊、频道、非 allowlist 群聊和不支持的指令。
 
 ## CI/CD
 
