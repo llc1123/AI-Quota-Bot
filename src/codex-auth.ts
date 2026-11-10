@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { codexUsageRequest } from "./codex-http";
+import { CodexInferenceError, codexInference } from "./codex-inference";
 import { chatgptAccountId, jwtExpiryMs, openJson, type SealedBox, sealJson } from "./crypto";
 import {
   CODEX_API_BASE,
@@ -14,6 +16,12 @@ const TOKENS_KEY = "codex.tokens";
 const LOGIN_KEY = "codex.login";
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
+const probeSchema = z
+  .object({
+    model: z.string().trim().min(1).max(200),
+    prompt: z.string().min(1).max(16_384),
+  })
+  .strict();
 
 interface StoredTokens {
   idToken?: string;
@@ -91,6 +99,8 @@ function isExpiredRefreshToken(error: unknown): boolean {
 }
 
 export class CodexAuthState {
+  private refreshPromise: Promise<StoredTokens> | undefined;
+
   constructor(
     private readonly state: CodexAuthObjectState,
     private readonly env: CodexAuthEnv,
@@ -98,6 +108,7 @@ export class CodexAuthState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/probe") return this.probe(request);
     try {
       if (request.method === "GET" && url.pathname === "/status") return json(await this.status());
       if (request.method === "POST" && url.pathname === "/login") return json(await this.login());
@@ -235,6 +246,20 @@ export class CodexAuthState {
 
   private async refreshTokens(tokens: StoredTokens): Promise<StoredTokens> {
     if (tokens.expiresAt - Date.now() > REFRESH_SKEW_MS) return tokens;
+    const pending = this.refreshPromise ?? this.refreshStoredTokens();
+    this.refreshPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.refreshPromise === pending) this.refreshPromise = undefined;
+    }
+  }
+
+  private async refreshStoredTokens(): Promise<StoredTokens> {
+    // Reload after joining the refresh lock: a caller may have loaded the old sealed token.
+    const tokens = await this.loadTokens();
+    if (!tokens) throw new Error("Codex 未登录");
+    if (tokens.expiresAt - Date.now() > REFRESH_SKEW_MS) return tokens;
     const refreshed = await fetchJson(joinUrl(CODEX_ISSUER, "/oauth/token"), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "codex-cli" },
@@ -266,6 +291,36 @@ export class CodexAuthState {
     const tokens = await this.refreshTokens(loaded);
     const url = joinUrl(CODEX_API_BASE, "/wham/usage");
     return codexUsageRequest(url, tokens.accessToken, codexUsageRelay(this.env));
+  }
+
+  private async probe(request: Request): Promise<Response> {
+    let body: unknown;
+    try {
+      body = await request.json<unknown>();
+    } catch (error) {
+      if (error instanceof SyntaxError) return json({ error: "invalid_probe" }, 400);
+      return json({ error: "codex_probe_error" }, 502);
+    }
+    const parsed = probeSchema.safeParse(body);
+    if (!parsed.success) return json({ error: "invalid_probe" }, 400);
+    try {
+      const loaded = await this.loadTokens();
+      if (!loaded) return json({ error: "codex_not_authenticated" }, 401);
+      const tokens = await this.refreshTokens(loaded);
+      return json({ text: await codexInference(tokens, parsed.data, codexUsageRelay(this.env)) });
+    } catch (error) {
+      console.warn("codex.probe.failed", {
+        model: parsed.data.model,
+        code: error instanceof CodexInferenceError ? error.code : "authentication",
+        httpStatus: error instanceof CodexInferenceError ? error.httpStatus : undefined,
+        requestId: error instanceof CodexInferenceError ? error.requestId : undefined,
+        bodyHint: error instanceof CodexInferenceError ? error.bodyHint : undefined,
+      });
+      return json(
+        { error: error instanceof CodexInferenceError ? error.message : "codex_probe_error" },
+        502,
+      );
+    }
   }
 
   private async notify(content: string): Promise<void> {
