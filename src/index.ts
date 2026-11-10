@@ -1,4 +1,5 @@
 import { CodexAuthState } from "./codex-auth";
+import { DetectionJob } from "./detection-job";
 import { codexStub, requiredEnv, type SecretName } from "./env";
 import { bearerAuth, json } from "./http";
 import { collectSnapshots } from "./providers";
@@ -12,7 +13,7 @@ import {
 } from "./telegram";
 import { sendWecomMarkdown } from "./wecom";
 
-export { CodexAuthState };
+export { CodexAuthState, DetectionJob };
 
 async function adminGuard(request: Request, env: Env): Promise<Response | undefined> {
   const token = requiredEnv(env, "ADMIN_TOKEN");
@@ -75,6 +76,18 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       {
         getQuotaMessage: async () => buildTelegramMessage(await collectSnapshots(env)),
         sendMessage: (reply) => sendTelegramMessage(token, reply),
+        startDetection: async (command) => {
+          const id = env.DETECTION_JOBS.idFromName(`${command.chatId}:${command.updateId}`);
+          const response = await env.DETECTION_JOBS.get(id).fetch(
+            "https://detection.internal/start",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(command),
+            },
+          );
+          if (!response.ok) throw new Error("检测任务创建失败");
+        },
         waitUntil: (task) => ctx.waitUntil(task),
       },
     );

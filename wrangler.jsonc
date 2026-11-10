@@ -24,6 +24,10 @@
       {
         "name": "CODEX_AUTH",
         "class_name": "CodexAuthState"
+      },
+      {
+        "name": "DETECTION_JOBS",
+        "class_name": "DetectionJob"
       }
     ]
   },
@@ -31,6 +35,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["CodexAuthState"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DetectionJob"]
     }
   ]
 }

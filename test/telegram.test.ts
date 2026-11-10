@@ -24,6 +24,88 @@ function webhookRequest(payload: unknown, secret = "telegram-secret"): Request {
 }
 
 describe("handleTelegramWebhook", () => {
+  it.each([
+    ["/detect gpt-5.6-luna", -1001234567890, true],
+    ["/detect@ai_quota_bot gpt-5.6-luna", -1001234567890, true],
+    ["/detect@another_bot gpt-5.6-luna", -1001234567890, false],
+    ["/detect gpt-5.6-luna", -1009999999999, false],
+  ])("dispatches %s only for this bot in allowed groups", async (text, chatId, accepted) => {
+    const startDetection = vi.fn().mockResolvedValue(undefined);
+    const response = await handleTelegramWebhook(
+      webhookRequest({
+        update_id: 201,
+        message: {
+          message_id: 91,
+          message_thread_id: 7,
+          chat: { id: chatId, type: "supergroup" },
+          text,
+        },
+      }),
+      config,
+      {
+        getQuotaMessage: vi.fn(),
+        sendMessage: vi.fn(),
+        startDetection,
+        waitUntil: vi.fn(),
+      },
+    );
+    expect(response.status).toBe(200);
+    if (accepted)
+      expect(startDetection).toHaveBeenCalledWith({
+        updateId: 201,
+        chatId,
+        messageId: 91,
+        messageThreadId: 7,
+        model: "gpt-5.6-luna",
+      });
+    else expect(startDetection).not.toHaveBeenCalled();
+  });
+
+  it("waits for durable job persistence before acknowledging detection", async () => {
+    const startDetection = vi.fn().mockRejectedValue(new Error("storage unavailable"));
+    await expect(
+      handleTelegramWebhook(
+        webhookRequest({
+          update_id: 202,
+          message: {
+            message_id: 92,
+            chat: { id: -1001234567890, type: "supergroup" },
+            text: "/detect gpt-5.6-luna",
+          },
+        }),
+        config,
+        { getQuotaMessage: vi.fn(), sendMessage: vi.fn(), startDetection, waitUntil: vi.fn() },
+      ),
+    ).rejects.toThrow("storage unavailable");
+  });
+
+  it.each(["/detect", "/detect bad model", "/detect https://example.com"])(
+    "shows usage for invalid detection command %s",
+    async (text) => {
+      const sendMessage = vi.fn();
+      const startDetection = vi.fn();
+      const tasks: Promise<void>[] = [];
+      await handleTelegramWebhook(
+        webhookRequest({
+          update_id: 203,
+          message: { message_id: 93, chat: { id: -1001234567890, type: "supergroup" }, text },
+        }),
+        config,
+        {
+          getQuotaMessage: vi.fn(),
+          sendMessage,
+          startDetection,
+          waitUntil: (task) => tasks.push(task),
+        },
+      );
+      await Promise.all(tasks);
+      expect(startDetection).not.toHaveBeenCalled();
+      expect(sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: -1001234567890, messageId: 93 }),
+      );
+    },
+  );
+
   it("acknowledges immediately and schedules a quota reply for an allowed supergroup", async () => {
     // Given
     let resolveQuota: ((message: string) => void) | undefined;
@@ -48,7 +130,12 @@ describe("handleTelegramWebhook", () => {
         },
       }),
       config,
-      { getQuotaMessage, sendMessage, waitUntil: (task) => tasks.push(task) },
+      {
+        getQuotaMessage,
+        sendMessage,
+        startDetection: vi.fn(),
+        waitUntil: (task) => tasks.push(task),
+      },
     );
 
     // Then
@@ -84,7 +171,12 @@ describe("handleTelegramWebhook", () => {
         },
       }),
       config,
-      { getQuotaMessage, sendMessage, waitUntil: (task) => tasks.push(task) },
+      {
+        getQuotaMessage,
+        sendMessage,
+        startDetection: vi.fn(),
+        waitUntil: (task) => tasks.push(task),
+      },
     );
 
     // Then
@@ -111,7 +203,12 @@ describe("handleTelegramWebhook", () => {
         },
       }),
       config,
-      { getQuotaMessage, sendMessage, waitUntil: (task) => tasks.push(task) },
+      {
+        getQuotaMessage,
+        sendMessage,
+        startDetection: vi.fn(),
+        waitUntil: (task) => tasks.push(task),
+      },
     );
 
     // Then
@@ -131,7 +228,12 @@ describe("handleTelegramWebhook", () => {
     const response = await handleTelegramWebhook(
       webhookRequest({ update_id: 102 }, "wrong-secret"),
       config,
-      { getQuotaMessage, sendMessage, waitUntil: (task) => tasks.push(task) },
+      {
+        getQuotaMessage,
+        sendMessage,
+        startDetection: vi.fn(),
+        waitUntil: (task) => tasks.push(task),
+      },
     );
 
     // Then
@@ -150,6 +252,7 @@ describe("handleTelegramWebhook", () => {
     const response = await handleTelegramWebhook(webhookRequest({ update_id: "invalid" }), config, {
       getQuotaMessage,
       sendMessage,
+      startDetection: vi.fn(),
       waitUntil: (task) => tasks.push(task),
     });
 
@@ -205,11 +308,13 @@ describe("sendTelegramMessage", () => {
 
   it("delivers the quota reply through Telegram Bot API", async () => {
     // Given
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ ok: true, result: { message_id: 99 } }));
     vi.stubGlobal("fetch", fetchMock);
 
     // When
-    await sendTelegramMessage("bot-token", {
+    const messageId = await sendTelegramMessage("bot-token", {
       chatId: -1001234567890,
       messageId: 42,
       messageThreadId: 7,
@@ -217,9 +322,11 @@ describe("sendTelegramMessage", () => {
     });
 
     // Then
+    expect(messageId).toBe(99);
     expect(fetchMock).toHaveBeenCalledWith("https://api.telegram.org/botbot-token/sendMessage", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      signal: expect.any(AbortSignal),
       body: JSON.stringify({
         chat_id: -1001234567890,
         text: "current quota",
