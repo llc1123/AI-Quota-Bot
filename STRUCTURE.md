@@ -43,21 +43,25 @@
 ## Directory Purposes
 
 **`src/`:**
+
 - Purpose: All Worker code — routing, provider collection, auth, reporting, notifications.
 - Contains: 12 TypeScript modules, one per concern (see `ARCHITECTURE.md` Layers).
 - Key files: `index.ts`, `providers.ts`, `codex-auth.ts`, `report.ts`.
 
 **`test/`:**
+
 - Purpose: Vitest unit tests, one file per source module.
 - Contains: `codex-auth.test.ts`, `codex-http.test.ts`, `krill.test.ts`, `providers.test.ts`, `report-state.test.ts`, `report.test.ts`, `telegram.test.ts`.
 - Key files: `telegram.test.ts` (largest — webhook/validation coverage), `report-state.test.ts` (baseline/change gating).
 
 **`relay/`:**
+
 - Purpose: Standalone Python service proxying both OpenAI usage and Krill subscription requests past Worker-originated fetch failures (OpenAI's bot block, Krill's region-specific pre-response timeout).
-- Contains: `codex_usage_relay.py` (single-file stdlib HTTP server), `Dockerfile` (python:3.13-slim).
+- Contains: `codex_usage_relay.py` (single-file stdlib HTTP server), `Dockerfile` (python:3.15-slim).
 - Key files: `codex_usage_relay.py`.
 
 **`.github/workflows/`:**
+
 - Purpose: CI and deployment automation.
 - Contains: `ci.yml`, `deploy-worker.yml`, `deploy-relay.yml`.
 - Key files: `deploy-relay.yml` (OIDC identity federation to Cloud Run).

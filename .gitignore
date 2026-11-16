@@ -1,6 +1,7 @@
 .codegraph
 .cortexkit/
 .omo/
+.playwright-mcp/
 .wrangler/
 dist/
 node_modules/

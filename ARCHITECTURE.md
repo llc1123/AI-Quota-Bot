@@ -7,6 +7,7 @@
 The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux, Krill AI) into a single normalized `ProviderSnapshot` list, formats that list for two delivery channels (WeCom markdown, Telegram text), and pushes it on a cron schedule or on demand. A companion Durable Object (`CodexAuthState`) owns the Codex OAuth device-login lifecycle, and a separate Python relay (`relay/`) fronts both OpenAI's usage endpoint and Krill's subscription endpoint to bypass Worker-originated fetch failures (OpenAI's bot interception and a Krill region-specific pre-response timeout).
 
 **Key Characteristics:**
+
 - **Single Worker, two handlers** — one `fetch` handler (`src/index.ts`) routes every HTTP request, and one `scheduled` handler drives the cron report.
 - **Failure isolation per provider** — every provider read is wrapped in a catch that degrades to an `error` snapshot, so one dead provider never aborts the rest of the report.
 - **Change-gated sending** — scheduled reports compare against a KV-stored baseline and are silently skipped when nothing crossed the threshold.
@@ -17,6 +18,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 ## Layers
 
 **Routing / handler layer:**
+
 - Purpose: Dispatch incoming HTTP requests to admin, webhook, and health routes; run the cron report.
 - Location: `src/index.ts`
 - Contains: `default.fetch` (`handleRequest`), `default.scheduled`, `adminGuard`, the internal `report()` helper.
@@ -24,6 +26,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: the Cloudflare runtime (entry point declared in `wrangler.jsonc` `main`).
 
 **Provider collection layer:**
+
 - Purpose: Read each provider's raw API and normalize it to `ProviderSnapshot`s.
 - Location: `src/providers.ts`
 - Contains: `collectSnapshots`, `parseCodexUsage`, `codexUsageJson`, `parseZenmuxSubscription`, `parseZenmuxPaygBalance`, the `provider()` failure-isolation wrapper, re-exports of Krill parsers, the bounded read timeouts (`PROVIDER_FETCH_TIMEOUT_MS`, `KRILL_FETCH_TIMEOUT_MS`), and the shared `QuotaWindow`/`ProviderSnapshot`/`WindowKind` types.
@@ -31,6 +34,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/index.ts` (`report()` and the Telegram path).
 
 **Provider-specific parsing:**
+
 - Purpose: Turn Krill's subscription payload into cycle windows and a dollar balance.
 - Location: `src/krill.ts`
 - Contains: `parseKrillCycleWindows`, `parseKrillBalance`, internal label-sanitizing/percent/progress helpers, and Krill-specific limits (`MAX_SUBSCRIPTIONS`, `MAX_SUBSCRIPTION_ID_LENGTH`, `MAX_LABEL_LENGTH`).
@@ -38,6 +42,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/providers.ts` (and re-exported from it).
 
 **Codex auth / identity layer:**
+
 - Purpose: Own the Codex OAuth device-code flow and token persistence in a Durable Object.
 - Location: `src/codex-auth.ts`
 - Contains: `CodexAuthState` (DO class), `StoredTokens`, `LoginAttempt`, `CodexAuthStorage`, the device-login/alarm-poll/refresh state machine.
@@ -45,6 +50,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/index.ts` (via stubs from `src/env.ts` `codexStub`) and `src/providers.ts` (usage fetch through the DO).
 
 **Codex HTTP / relay-fallback layer:**
+
 - Purpose: Fetch Codex usage directly, then fall back to the relay when OpenAI's bot-block triggers.
 - Location: `src/codex-http.ts`
 - Contains: `codexUsageRequest`, `relayUsageRequest`, `jsonResponse`, `CodexUsageRelay` type.
@@ -52,6 +58,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/codex-auth.ts`.
 
 **Cryptography layer:**
+
 - Purpose: AES-GCM seal/open of JSON and JWT claim extraction.
 - Location: `src/crypto.ts`
 - Contains: `sealJson`, `openJson`, `SealedBox`, `jwtClaims`, `jwtExpiryMs`, `chatgptAccountId`, base64url helpers.
@@ -59,6 +66,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/codex-auth.ts`.
 
 **Reporting layer:**
+
 - Purpose: Format `ProviderSnapshot`s into WeCom markdown and Telegram text.
 - Location: `src/report.ts`
 - Contains: `buildMarkdown`, `buildTelegramMessage`, bar/color/window-label helpers.
@@ -66,6 +74,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/index.ts` and `src/telegram.ts` (through `index.ts`).
 
 **Report state / dedup layer:**
+
 - Purpose: Persist and compare a numeric baseline to decide whether a report is worth sending.
 - Location: `src/report-state.ts`
 - Contains: `ReportBaseline`, `ReportStateStore`, `reportBaseline`, `shouldSendScheduledReport`, `shouldSendForReportChange`, `saveReportBaseline`.
@@ -73,6 +82,7 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/index.ts`.
 
 **Notification / integration layer:**
+
 - Purpose: Send messages to WeCom and Telegram.
 - Location: `src/wecom.ts`, `src/telegram.ts`
 - Contains: `sendWecomMarkdown`; Telegram `handleTelegramWebhook`, `sendTelegramMessage`, `parseTelegramWebhookConfig`, zod schemas, `TelegramConfigurationError`, `TelegramApiError`.
@@ -80,12 +90,14 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 - Used by: `src/index.ts` and `src/codex-auth.ts` (WeCom notify).
 
 **Shared utilities / env layer:**
+
 - Purpose: Small HTTP/env helpers and compile-time constants.
 - Location: `src/http.ts`, `src/env.ts`
 - Contains: `json`, `fetchJson` (applies `AbortSignal.timeout(timeoutMs)` when a timeout is passed), `bearerAuth`, `joinUrl`, `isRecord`, `asString`, `asNumber`; env constants (`CODEX_ISSUER`, `CODEX_API_BASE`, `CODEX_OAUTH_CLIENT_ID`, `ZENMUX_API_BASE`, `KRILL_API_BASE`), `textEnv`, `requiredEnv`, `codexStub`, `krillApiBase`, `codexUsageRelay`, `SecretName`.
 - Used by: nearly every other module.
 
 **Relay layer (separate deploy):**
+
 - Purpose: Proxy two fixed upstream routes (`GET /wham/usage` → OpenAI, `GET /krill/subscription` → Krill) with a clean `Authorization`/`User-Agent` header, so requests look like a real Codex CLI and avoid OpenAI's bot interception and Krill's region-specific pre-response timeout.
 - Location: `relay/codex_usage_relay.py` (Cloud Run, `relay/Dockerfile`).
 - Depends on: Python stdlib only.
@@ -128,26 +140,31 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 ## Key Abstractions
 
 **`ProviderSnapshot`:**
+
 - Purpose: The normalized unit every provider produces, downcast to `windowed` (ranked windows), `balance` (dollar string), or `error` (message).
 - Location: `src/providers.ts`
 - Pattern: Discriminated union on `kind`.
 
 **`QuotaWindow`:**
+
 - Purpose: A single quota window with `usagePercent` (quota used) and `timePercent`/`remainingMs` (time elapsed in the window), plus optional `id`/`label`/`timing: "idle"`.
 - Location: `src/providers.ts`
 - Pattern: Readonly plain object; `kind` is `"1d" | "5h" | "7d" | "cycle"`.
 
 **`CodexAuthState`:**
+
 - Purpose: The Durable Object (SQLite-backed) that owns Codex tokens and the login/alarm poll loop; exposes `/status`, `/login`, `/usage` internally.
 - Location: `src/codex-auth.ts`
 - Pattern: Durable Object class; exported from `src/index.ts` and bound as `CODEX_AUTH` in `wrangler.jsonc`.
 
 **`SealedBox`:**
+
 - Purpose: Versioned AES-GCM ciphertext envelope (`{version, iv, ciphertext}` base64url).
 - Location: `src/crypto.ts`
 - Pattern: Versioned container; `sealJson`/`openJson` are the only writers/readers.
 
 **`ReportBaseline` / `ReportStateStore`:**
+
 - Purpose: The KV-backed numeric snapshot (`windows: Record<string,number>`, `balances: Record<string,number>`) used for change detection.
 - Location: `src/report-state.ts`
 - Pattern: JSON-persisted record; parsed leniently (`parseBaseline` drops malformed entries).
@@ -155,21 +172,25 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 ## Entry Points
 
 **Worker fetch handler:**
+
 - Location: `src/index.ts` (`export default { fetch, scheduled }`)
 - Triggers: Every HTTP request to the Worker.
 - Responsibilities: Route `/health`, `/ready`, `/preview`, `/run`, `/codex/status`, `/codex/login`, `/telegram/webhook`; apply `adminGuard` to protected routes; return 404 otherwise.
 
 **Worker scheduled handler:**
+
 - Location: `src/index.ts` (`default.scheduled`)
 - Triggers: Cloudflare cron `*/10 * * * *` (declared in `wrangler.jsonc`).
 - Responsibilities: Collect snapshots, gate on baseline change, send WeCom markdown, save baseline.
 
 **Durable Object `fetch` / `alarm`:**
+
 - Location: `src/codex-auth.ts` (`CodexAuthState.fetch`, `CodexAuthState.alarm`)
 - Triggers: Internal DO subrequests from `codexStub`; the DO alarm for device-code polling.
 - Responsibilities: Serve `/status`/`/login`/`/usage`; run the poll-on-alarm step; notify WeCom on transitions.
 
 **Relay HTTP handler:**
+
 - Location: `relay/codex_usage_relay.py` (`do_GET`)
 - Triggers: `GET /wham/usage` (from `relayUsageRequest`), `GET /krill/subscription` (from the Krill branch of `collectSnapshots`), and `GET /health`.
 - Responsibilities: Validate `X-Relay-Token`, require a `Bearer` provider token, forward `Authorization`/`User-Agent` to the route's fixed upstream (OpenAI overridable via `OPENAI_USAGE_URL`, Krill fixed), and stream the response back.
@@ -192,14 +213,17 @@ The Worker aggregates usage quotas from three AI providers (OpenAI Codex, ZenMux
 **Caching:** All JSON responses set `cache-control: no-store` (`src/http.ts` `json`); the relay also sends `cache-control: no-store`.
 
 **Storage:**
+
 - KV namespace `REPORT_STATE` (`wrangler.jsonc` binding) holds the last report baseline under `last-report-baseline`.
 - Durable Object `CODEX_AUTH` (SQLite migration `v1`) stores sealed Codex tokens (`codex.tokens`) and the in-flight login attempt (`codex.login`), plus the alarm for polling.
 
 **Scheduling:**
+
 - Cloudflare cron `*/10 * * * *` drives the Worker `scheduled` handler.
 - The Durable Object alarm drives Codex device-code polling at the provider-specified interval.
 
 **Security:**
+
 - Admin routes (`/preview`, `/run`, `/codex/login`, `/codex/status`) require `Authorization: Bearer $ADMIN_TOKEN`.
 - Codex tokens are AES-GCM-encrypted at rest; the 32-byte key is `CODEX_TOKEN_ENCRYPTION_KEY`.
 - Telegram webhook verifies `x-telegram-bot-api-secret-token` and restricts chats to `TELEGRAM_ALLOWED_CHAT_IDS` (negative IDs only).

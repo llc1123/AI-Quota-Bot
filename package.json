@@ -14,15 +14,15 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
-    "@cloudflare/vite-plugin": "^1.45.0",
-    "miniflare": "4.20260710.0",
+    "@biomejs/biome": "^2.6.8",
+    "@cloudflare/vite-plugin": "^1.69.1",
+    "miniflare": "5.20261116.0-beta",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.111.0"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.163.0"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   }
 }

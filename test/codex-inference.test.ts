@@ -1,4 +1,4 @@
-import { Miniflare } from "miniflare";
+import { Miniflare, Response as MiniflareResponse } from "miniflare";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexInferenceError, codexInference } from "../src/codex-inference";
 
@@ -36,18 +36,37 @@ describe("Codex Responses probe transport", () => {
   it("sends a probe with fetch options accepted by the real Worker runtime", async () => {
     let upstreamCalls = 0;
     const runtime = new Miniflare({
-      modules: true,
-      compatibilityDate: "2026-07-15",
-      script: `export default { async fetch(request) {
+      workers: [
+        {
+          config: {
+            name: "probe-transport",
+            compatibilityDate: "2026-07-15",
+            manifest: {
+              mainModule: "worker.mjs",
+              modules: {
+                "worker.mjs": {
+                  type: "esm",
+                  contents: `export default { async fetch(request) {
         const options = await request.json();
         return fetch("https://chatgpt.com/backend-api/codex/responses", options);
       } };`,
-      outboundService: () => {
-        upstreamCalls += 1;
-        return new Response(
-          event({ type: "response.output_text.done", text: "10,20,30" }) + event(completed),
-        );
-      },
+                },
+              },
+            },
+          },
+          dev: {
+            outboundService: {
+              type: "fetcher",
+              handler: () => {
+                upstreamCalls += 1;
+                return new MiniflareResponse(
+                  event({ type: "response.output_text.done", text: "10,20,30" }) + event(completed),
+                );
+              },
+            },
+          },
+        },
+      ],
     });
     await runtime.ready;
     vi.stubGlobal(
