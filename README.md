@@ -102,4 +102,4 @@ GitHub Packages 首次发布的容器镜像默认为 private，即使仓库是 p
 
 跨 Cloudflare 账号迁移时，需在目标账号重新部署 Worker 和两个 SQLite Durable Object，并复制运行时 secrets。Cloudflare 不提供跨账号 DO namespace 转移；Codex 登录状态需要重新完成 `/codex/login`，或另行实现受控的数据导入导出。切换前应等待旧账号中的检测任务完成。
 
-个人账号的目标地址为 `https://ai-quota-bot.llc1123.workers.dev`。迁移准备阶段的 `triggers.crons` 为空，目标首次部署不会自动推送。目标 `/ready`、Codex 登录和真实额度/检测请求验证通过后，再把 Telegram webhook 切到此地址的 `/telegram/webhook`；确认切换成功并停用旧 Worker 的 cron 后，将此配置的 `triggers.crons` 恢复为 `["*/10 * * * *"]` 并部署，完成定时任务交接。仅修改部署配置不会迁移现有生产流量。
+个人账号的生产地址为 `https://ai-quota-bot.llc1123.workers.dev`，Telegram webhook 使用此地址的 `/telegram/webhook`，cron 为 `*/10 * * * *`。后续跨账号迁移时，先将目标 `triggers.crons` 设为空，完成 `/ready`、Codex 登录和真实额度/检测请求验证，再切换 Telegram webhook；确认旧 Worker 的 cron 已停用后恢复目标 cron 并部署，避免重复推送。

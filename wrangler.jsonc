@@ -12,7 +12,7 @@
     "KRILL_API_BASE": "https://www.krill-code.com"
   },
   "triggers": {
-    "crons": []
+    "crons": ["*/10 * * * *"]
   },
   "kv_namespaces": [
     {
