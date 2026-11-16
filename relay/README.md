@@ -1,6 +1,6 @@
 # Provider usage relay
 
-Minimal stdlib Cloud Run service with fixed upstream routes:
+Minimal stdlib container service with fixed upstream routes:
 
 - `GET /wham/usage` → OpenAI Codex usage.
 - `GET /krill/subscription` → `https://www.krill-code.com/api/subscription`.
@@ -45,20 +45,23 @@ python3 -m unittest discover -s relay -p 'test_codex_usage_relay.py' -v
 python3 -m py_compile relay/codex_usage_relay.py relay/test_codex_usage_relay.py
 ```
 
-Deploy:
+Images are published by `Publish Relay` to GitHub Container Registry:
 
 ```bash
-gcloud run deploy codex-usage-relay \
-  --source relay \
-  --region asia-northeast1 \
-  --allow-unauthenticated \
-  --set-env-vars RELAY_TOKEN="$CODEX_USAGE_RELAY_TOKEN"
+docker pull ghcr.io/llc1123/ai-quota-bot:latest
 ```
+
+The workflow also publishes `sha-<short-commit>` tags for selecting a specific
+build. The package must be made public after its first publication for anonymous
+pulls. The production relay runs on the VPS behind the shared Nginx at
+`ai-quota-checker.llc.moe`; image publication does not update the running
+container. Its `RELAY_TOKEN` stays in the VPS environment file. Reload Nginx
+after replacing the relay container so its upstream address is refreshed.
 
 Worker config:
 
 ```bash
-CODEX_USAGE_RELAY_URL="https://<service-url>/wham/usage"
+CODEX_USAGE_RELAY_URL="https://ai-quota-checker.llc.moe/wham/usage"
 CODEX_USAGE_RELAY_TOKEN="same-random-token"
 ```
 
@@ -67,4 +70,4 @@ same relay origin directly, with a 20-second Worker timeout. Without the pair,
 Krill retains direct collection using `KRILL_API_BASE`. The relay fixes Krill's
 upstream to the URL above; it does not accept caller-supplied upstream URLs.
 This avoids the observed pre-response timeout from Workers running in AMS by
-using the existing Tokyo Cloud Run service. Codex retains its existing fallback behavior.
+using the VPS relay. Codex retains its existing fallback behavior.
