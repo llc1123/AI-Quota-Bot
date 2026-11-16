@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ai-quota-bot",
+  "account_id": "27f84d8803f0f08e457c5a6cc8ee9d3b",
   "workers_dev": true,
   "preview_urls": false,
   "main": "src/index.ts",
@@ -11,12 +12,12 @@
     "KRILL_API_BASE": "https://www.krill-code.com"
   },
   "triggers": {
-    "crons": ["*/10 * * * *"]
+    "crons": []
   },
   "kv_namespaces": [
     {
       "binding": "REPORT_STATE",
-      "id": "53154e55098a41008c8ca69353d42e01"
+      "id": "5235a9def8144a42bde4ef8d9c8be5e8"
     }
   ],
   "durable_objects": {
