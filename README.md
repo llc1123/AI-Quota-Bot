@@ -87,20 +87,19 @@ Webhook 会校验 Telegram secret header，并静默忽略私聊、频道、非 
 GitHub Actions：
 
 - `CI`：检查 Worker、测试、构建 relay 镜像。
-- `Deploy Worker`：`main` 分支检查并部署 Cloudflare Worker；运行时 secrets 需预先通过 Wrangler 配置。
-- `Deploy Relay`：使用 GitHub OIDC Direct Workload Identity Federation 推送 relay 镜像到 Artifact Registry，再部署到 Cloud Run；部署后把 Cloud Run URL 写入 Worker secret `CODEX_USAGE_RELAY_URL`。
+- `Deploy Worker`：`main` 分支检查并部署 Cloudflare Worker；目标是 `wrangler.jsonc` 中的个人账号 `27f84d8803f0f08e457c5a6cc8ee9d3b`（`i@llc.moe`），运行时 secrets 需预先通过 Wrangler 配置。
+- `Publish Relay`：使用仓库自带的 `GITHUB_TOKEN` 推送 relay 镜像到 `ghcr.io/llc1123/ai-quota-bot`，发布 `latest`、`sha-<提交短哈希>` 和分支标签。镜像名从仓库地址转为小写，不需要 GCP 凭据。此工作流只发布镜像；VPS 服务更新单独执行。
 
-GitHub Variables：
-
-- `GCP_PROJECT_ID=llc-personal`
-- `GCP_REGION=asia-northeast1`
-- `GCP_ARTIFACT_REPOSITORY=ai-quota-bot`
-- `GCP_RELAY_SERVICE=codex-usage-relay`
-- `GCP_WORKLOAD_IDENTITY_PROVIDER=projects/833268932862/locations/global/workloadIdentityPools/github/providers/github`
-- `CLOUDFLARE_ACCOUNT_ID=fc1f4ce1cc619f0f7dde83674c85b62c`
+Cloudflare 账号和 KV namespace ID 由 `wrangler.jsonc` 管理；不再使用 GitHub 的 `CLOUDFLARE_ACCOUNT_ID` 或 `GCP_*` Variables。
 
 GitHub Secrets：
 
-- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_API_TOKEN`：必须具备个人目标账号的 Worker 部署和绑定资源权限。仓库转移会保留旧 secret，需核对或替换其账号授权。
 
-运行时配置不由 workflow 写入：Worker secrets 通过 Wrangler CLI 预置在 Cloudflare；Cloud Run env/secrets、service account、公开访问和资源限制通过 gcloud CLI 预置在服务上。Actions 只推 Worker 代码、relay 镜像和 Cloud Run revision 镜像。
+GitHub Packages 首次发布的容器镜像默认为 private，即使仓库是 public 也需在 package 设置中改为 public，才能匿名拉取。此前停用的 relay 工作流需在新发布配置进入主分支后重新启用。
+
+运行时配置不由 workflow 写入：Worker secrets 通过 Wrangler CLI 预置在 Cloudflare；relay 的 `RELAY_TOKEN` 保留在 VPS 环境文件中。Worker 的 `CODEX_USAGE_RELAY_URL` 为 `https://ai-quota-checker.llc.moe/wham/usage`。
+
+跨 Cloudflare 账号迁移时，需在目标账号重新部署 Worker 和两个 SQLite Durable Object，并复制运行时 secrets。Cloudflare 不提供跨账号 DO namespace 转移；Codex 登录状态需要重新完成 `/codex/login`，或另行实现受控的数据导入导出。切换前应等待旧账号中的检测任务完成。
+
+个人账号的目标地址为 `https://ai-quota-bot.llc1123.workers.dev`。迁移准备阶段的 `triggers.crons` 为空，目标首次部署不会自动推送。目标 `/ready`、Codex 登录和真实额度/检测请求验证通过后，再把 Telegram webhook 切到此地址的 `/telegram/webhook`；确认切换成功并停用旧 Worker 的 cron 后，将此配置的 `triggers.crons` 恢复为 `["*/10 * * * *"]` 并部署，完成定时任务交接。仅修改部署配置不会迁移现有生产流量。
