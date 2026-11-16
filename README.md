@@ -86,9 +86,11 @@ Webhook 会校验 Telegram secret header，并静默忽略私聊、频道、非 
 
 GitHub Actions：
 
-- `CI`：检查 Worker、测试、构建 relay 镜像。
+- `CI`：所有 push 和 pull request 都会检查 Worker、运行测试并构建 relay 镜像。
 - `Deploy Worker`：`main` 分支检查并部署 Cloudflare Worker；目标是 `wrangler.jsonc` 中的个人账号 `27f84d8803f0f08e457c5a6cc8ee9d3b`（`i@llc.moe`），运行时 secrets 需预先通过 Wrangler 配置。
 - `Publish Relay`：使用仓库自带的 `GITHUB_TOKEN` 推送 relay 镜像到 `ghcr.io/llc1123/ai-quota-bot`，发布 `latest`、`sha-<提交短哈希>` 和分支标签。镜像名从仓库地址转为小写，不需要 GCP 凭据。此工作流只发布镜像；VPS 服务更新单独执行。
+
+Renovate 更新先推送到分支并运行 CI，检查通过后直接合入 `main`；检查或直接合并失败时，允许回退创建 PR。
 
 Cloudflare 账号和 KV namespace ID 由 `wrangler.jsonc` 管理；不再使用 GitHub 的 `CLOUDFLARE_ACCOUNT_ID` 或 `GCP_*` Variables。
 
