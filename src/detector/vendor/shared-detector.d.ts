@@ -62,9 +62,10 @@ export function analyzeSharedOutputs(
   outputs: readonly { readonly text: string; readonly expected_count: number }[],
   bank: Bank,
   artifact: SharedDetector,
+  options?: { readonly allowPartial?: boolean },
 ): {
   readonly prediction: string;
   readonly probability: number | null;
-  readonly decision?: "unscorable" | "not_model";
+  readonly decision?: "unscorable" | "not_model" | "partial";
   readonly used_outputs: number;
 };

@@ -84,7 +84,8 @@ export async function codexInference(
         store: false,
         reasoning: { effort: "low" },
       }),
-      signal: AbortSignal.timeout(240_000),
+      // Four attempts must fit inside the detection alarm's 15-minute lifetime.
+      signal: AbortSignal.timeout(180_000),
       redirect: "manual",
     });
     if (!response.ok || !response.body) {
