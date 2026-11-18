@@ -63,6 +63,7 @@ function probeRequest(body: unknown): Request {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -134,6 +135,67 @@ describe("Codex auth durable object", () => {
       ["Bearer new-private-access", "account-1", "private-relay"],
       ["Bearer new-private-access", "account-1", "private-relay"],
     ]);
+  });
+
+  it("aborts a stalled shared refresh and allows later probes to refresh again", async () => {
+    const storage = new TestCodexStorage(
+      await sealJson(
+        { accessToken: "old-access", refreshToken: "old-refresh", expiresAt: 0 },
+        encryptionKey,
+      ),
+    );
+    const auth = new CodexAuthState({ storage }, authEnv);
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((delay) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), delay);
+      return controller.signal;
+    });
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let refreshes = 0;
+    let inferences = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input, init) => {
+        if (requestUrl(input) === "https://auth.openai.com/oauth/token") {
+          refreshes++;
+          if (refreshes === 1) {
+            return new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+                once: true,
+              });
+              markStarted?.();
+            });
+          }
+          return Response.json({ access_token: "new-access", expires_in: 3600 });
+        }
+        inferences++;
+        return new Response(
+          'data: {"type":"response.output_text.delta","delta":"12,34,56"}\n\n' +
+            'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+        );
+      }),
+    );
+    const probes = Promise.all(
+      [0, 1, 2].map(() => auth.fetch(probeRequest({ model: "gpt-5", prompt: "numbers" }))),
+    );
+    await started;
+    await vi.advanceTimersByTimeAsync(15_000);
+    const outcome = await Promise.race([probes, Promise.resolve("refresh still pending")]);
+    expect(outcome).toBeInstanceOf(Array);
+    if (typeof outcome === "string") throw new Error(outcome);
+    expect(outcome.map((response) => response.status)).toEqual([502, 502, 502]);
+    expect(refreshes).toBe(1);
+    expect(inferences).toBe(0);
+
+    const recovered = await auth.fetch(probeRequest({ model: "gpt-5", prompt: "numbers" }));
+    expect(recovered.status).toBe(200);
+    await expect(recovered.json()).resolves.toEqual({ text: "12,34,56" });
+    expect(refreshes).toBe(2);
+    expect(inferences).toBe(1);
   });
 
   it.each([

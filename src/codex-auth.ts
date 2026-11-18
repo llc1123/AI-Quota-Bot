@@ -16,6 +16,7 @@ const TOKENS_KEY = "codex.tokens";
 const LOGIN_KEY = "codex.login";
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
+const REFRESH_TIMEOUT_MS = 15_000;
 const probeSchema = z
   .object({
     model: z.string().trim().min(1).max(200),
@@ -260,15 +261,20 @@ export class CodexAuthState {
     const tokens = await this.loadTokens();
     if (!tokens) throw new Error("Codex 未登录");
     if (tokens.expiresAt - Date.now() > REFRESH_SKEW_MS) return tokens;
-    const refreshed = await fetchJson(joinUrl(CODEX_ISSUER, "/oauth/token"), {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "codex-cli" },
-      body: form({
-        client_id: CODEX_OAUTH_CLIENT_ID,
-        grant_type: "refresh_token",
-        refresh_token: tokens.refreshToken,
-      }),
-    });
+    const refreshed = await fetchJson(
+      joinUrl(CODEX_ISSUER, "/oauth/token"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "codex-cli" },
+        body: form({
+          client_id: CODEX_OAUTH_CLIENT_ID,
+          grant_type: "refresh_token",
+          refresh_token: tokens.refreshToken,
+        }),
+      },
+      "Codex token refresh",
+      REFRESH_TIMEOUT_MS,
+    );
     if (!isRecord(refreshed)) throw new Error("Codex refresh returned invalid JSON");
     const next = tokenSnapshot(tokens, refreshed);
     await this.saveTokens(next);
