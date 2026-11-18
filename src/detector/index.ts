@@ -38,6 +38,7 @@ export function analyzeDetectionOutputs(
     outputs.map(({ text, expectedCount }) => ({ text, expected_count: expectedCount })),
     bank,
     detector,
+    { allowPartial: true },
   );
   return {
     prediction: result.prediction,

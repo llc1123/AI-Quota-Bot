@@ -22,11 +22,18 @@ The upstream sources, including `types.ts`, were read from the pinned archive.
 The upstream compatibility check binds this metadata to the artifact.
 
 The wrapper generates exactly three upstream challenges, adapts `expectedCount`
-to `expected_count`, and never enables partial analysis or retries. Upstream
+to `expected_count`, and enables upstream partial analysis with the fourth argument
+`{ allowPartial: true }`. Request retries belong to `DetectionJob`. The handwritten
+declaration includes this existing runtime option and the `partial` decision;
+the vendored algorithm is unchanged. Upstream
 acceptance requires at least max(80, ceil(expected_count * 0.55)) parsed numbers;
-it does not require the requested count exactly. Any rejected reply or a total
-other than three yields `unscorable`. Upstream successful rankings have no
-`decision` field; the wrapper calls that result `ranked`. `not_model` is preserved.
+it does not require the requested count exactly. For at most three submitted
+replies, one or two accepted replies yield a `partial` ranking with `probability:
+null`; rejected replies are excluded by upstream validity filtering. Zero accepted
+replies or more than three submitted replies yield `unscorable`. Three accepted
+replies retain the calibrated ranking. Upstream complete successful rankings have
+no `decision` field; the wrapper calls that result `ranked`. Sequence-shape
+rejection remains `not_model` for both partial and complete analyses.
 The probability is a calibrated relative probability within this reference bank,
 and does not prove model identity or account for models outside the bank.
 
