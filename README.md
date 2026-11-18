@@ -22,11 +22,11 @@ npm run dev
 
 ## 模型指纹检测
 
-在允许的 Telegram 群聊中发送 `/detect gpt-5.6-luna`。机器人先回复“模型检测中”，完成后编辑同一条消息，显示请求模型、最匹配的模型和是否一致。请求失败或有效回答不足三条时显示检测失败。
+在允许的 Telegram 群聊中发送 `/detect gpt-5.6-luna`。机器人先回复“模型检测中”，完成后编辑同一条消息，显示请求模型、最匹配的模型和是否一致。至少一条有效回答即可评分；全部请求失败或没有可评分的回答时显示检测失败。
 
 匹配到 `gpt-6-astra` 指纹时，输出显示为 `gpt-6-astra/gpt-6.1-sol`；输入这两个模型中的任意一个都判定一致，因为此指纹不能区分两者。
 
-检测复用 `CODEX_AUTH` 内保存的 Codex OAuth 凭证，以 `low` 推理强度并行发送三个独立数字序列探针，不自动重试模型请求。检测由独立的 `DetectionJob` Durable Object alarm 执行，不受 webhook 回复后 30 秒的 `waitUntil` 限制；重复 webhook 按群聊和 update ID 去重。
+检测复用 `CODEX_AUTH` 内保存的 Codex OAuth 凭证，以 `low` 推理强度并行发送三个独立数字序列探针。每个探针请求失败或回答未通过评分器的数字数量、序列有效性检查时，最多重试三次（含首次共四次）；只有得到有效回答后才停止重试，最终使用保留的有效回答评分。单次推理超时为 180 秒，使四次尝试仍处于 alarm 的 15 分钟执行预算内。检测由独立的 `DetectionJob` Durable Object alarm 执行，不受 webhook 回复后 30 秒的 `waitUntil` 限制；重复 webhook 按群聊和 update ID 去重。
 
 配置现有 `CODEX_USAGE_RELAY_URL` / `CODEX_USAGE_RELAY_TOKEN` 时，推理请求使用同一 relay 的固定 `/codex/responses` 路由，避开已实测的 Worker 直连 403 HTML 拦截；需部署包含该路由的 relay 版本。未配置时直连 Codex Responses API。
 

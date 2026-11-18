@@ -31,6 +31,7 @@ type JobState = {
   readonly blockConcurrencyWhile: <T>(callback: () => Promise<T>) => Promise<T>;
 };
 const probeResponseSchema = z.object({ text: z.string().max(64_000) });
+const PROBE_MAX_RETRIES = 3;
 
 class DetectionError extends Error {}
 
@@ -89,31 +90,55 @@ export class DetectionJob {
     let text: string;
     try {
       const outputs = await Promise.allSettled(
-        generateDetectionChallenges().map(async (challenge) => {
-          const response = await this.env.CODEX_AUTH.getByName("codex").fetch(
-            "https://codex-auth.internal/probe",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ model: job.command.model, prompt: challenge.prompt }),
-            },
-          );
-          if (!response.ok) throw new DetectionError(`Codex 请求失败（HTTP ${response.status}）`);
-          const output = probeResponseSchema.parse(await response.json());
-          return { text: output.text, expectedCount: challenge.expectedCount };
+        generateDetectionChallenges().map(async (challenge, probeIndex) => {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              const response = await this.env.CODEX_AUTH.getByName("codex").fetch(
+                "https://codex-auth.internal/probe",
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ model: job.command.model, prompt: challenge.prompt }),
+                },
+              );
+              if (!response.ok) {
+                await response.body?.cancel();
+                throw new DetectionError(`Codex 请求失败（HTTP ${response.status}）`);
+              }
+              const output = probeResponseSchema.parse(await response.json());
+              const sample = { text: output.text, expectedCount: challenge.expectedCount };
+              const validation = analyzeDetectionOutputs([sample]);
+              if (!validation.prediction || validation.validOutputs < 1)
+                throw new DetectionError("回答不符合评分要求（数字不足或序列无效）");
+              return sample;
+            } catch (error) {
+              if (!(error instanceof Error) || attempt === PROBE_MAX_RETRIES) throw error;
+              console.warn("detection.probe.retry", {
+                updateId: job.command.updateId,
+                probe: probeIndex + 1,
+                retry: attempt + 1,
+                reason: error instanceof DetectionError ? error.message : error.name,
+              });
+            }
+          }
         }),
       );
       const samples = [];
       for (const output of outputs) {
-        if (output.status === "rejected")
-          throw new DetectionError("三次请求未全部成功，请稍后重新检测");
-        samples.push(output.value);
+        if (output.status === "fulfilled") samples.push(output.value);
       }
+      console.info("detection.probes.completed", {
+        updateId: job.command.updateId,
+        successfulProbes: samples.length,
+        failedProbes: outputs.length - samples.length,
+      });
+      if (samples.length === 0)
+        throw new DetectionError("三轮请求均失败（每轮最多重试3次），请稍后重新检测");
       const result = analyzeDetectionOutputs(samples);
       if (result.decision === "not_model")
         throw new DetectionError("回答的数字序列不符合参考库特征，暂不可评分");
-      if (!result.prediction || result.validOutputs !== 3)
-        throw new DetectionError(`有效回答 ${result.validOutputs}/3，暂不可评分`);
+      if (!result.prediction || result.validOutputs < 1)
+        throw new DetectionError(`有效回答 ${result.validOutputs}/${samples.length}，暂不可评分`);
       const sharedFingerprint = result.prediction === "gpt-6-astra";
       const prediction = sharedFingerprint ? "gpt-6-astra/gpt-6.1-sol" : result.prediction;
       const agreement =
