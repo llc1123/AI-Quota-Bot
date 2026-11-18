@@ -124,7 +124,7 @@ describe("Codex Responses probe transport", () => {
       store: false,
       reasoning: { effort: "low" },
     });
-    expect(timeout).toHaveBeenCalledWith(240_000);
+    expect(timeout).toHaveBeenCalledWith(180_000);
     expect(source.cancel).toHaveBeenCalledTimes(1);
     expect(source.body.locked).toBe(false);
   });
