@@ -112,7 +112,8 @@ export class CodexAuthState {
     if (request.method === "POST" && url.pathname === "/probe") return this.probe(request);
     try {
       if (request.method === "GET" && url.pathname === "/status") return json(await this.status());
-      if (request.method === "POST" && url.pathname === "/login") return json(await this.login());
+      if (request.method === "POST" && url.pathname === "/login")
+        return json(await this.login(url.searchParams.get("force") === "true"));
       if (request.method === "GET" && url.pathname === "/usage") return json(await this.usage());
       return json({ error: "not_found" }, 404);
     } catch (error) {
@@ -140,13 +141,6 @@ export class CodexAuthState {
   }
 
   private async status(): Promise<Record<string, unknown>> {
-    const tokens = await this.loadTokens();
-    if (tokens)
-      return {
-        state: "authenticated",
-        accountId: tokens.accountId,
-        expiresAt: new Date(tokens.expiresAt).toISOString(),
-      };
     const login = await this.state.storage.get(LOGIN_KEY);
     if (login && login.expiresAt > Date.now()) {
       return {
@@ -156,11 +150,18 @@ export class CodexAuthState {
         expiresAt: new Date(login.expiresAt).toISOString(),
       };
     }
+    const tokens = await this.loadTokens();
+    if (tokens)
+      return {
+        state: "authenticated",
+        accountId: tokens.accountId,
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+      };
     return { state: "anonymous" };
   }
 
-  private async login(): Promise<Record<string, unknown>> {
-    const tokens = await this.loadTokens();
+  private async login(force: boolean): Promise<Record<string, unknown>> {
+    const tokens = force ? undefined : await this.loadTokens();
     if (tokens) {
       try {
         const refreshed = await this.refreshTokens(tokens);

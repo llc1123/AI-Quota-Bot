@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAuthState } from "../src/codex-auth";
-import { type SealedBox, sealJson } from "../src/crypto";
+import { openJson, type SealedBox, sealJson } from "../src/crypto";
 
 type TestLoginAttempt = {
   readonly deviceAuthId: string;
@@ -69,6 +69,99 @@ afterEach(() => {
 });
 
 describe("Codex auth durable object", () => {
+  it.each(["", "?force=false", "?force=True", "?force=1"])(
+    "keeps the stored-token login fast path for %s",
+    async (query) => {
+      const sealed = await sealJson(
+        {
+          accessToken: "old-access",
+          refreshToken: "old-refresh",
+          accountId: "account-1",
+          expiresAt: Date.now() + 3600_000,
+        },
+        encryptionKey,
+      );
+      const storage = new TestCodexStorage(sealed);
+      const auth = new CodexAuthState({ storage }, authEnv);
+      const fetchMock = vi.fn<typeof fetch>();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const response = await auth.fetch(
+        new Request(`https://codex-auth.internal/login${query}`, { method: "POST" }),
+      );
+
+      await expect(response.json()).resolves.toEqual({
+        state: "authenticated",
+        accountId: "account-1",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await storage.get("codex.tokens")).toEqual(sealed);
+    },
+  );
+
+  it("forces and reuses pending device login while preserving old tokens until success", async () => {
+    const sealed = await sealJson(
+      {
+        accessToken: "revoked-access",
+        refreshToken: "old-refresh",
+        expiresAt: Date.now() + 3600_000,
+      },
+      encryptionKey,
+    );
+    const storage = new TestCodexStorage(sealed);
+    const auth = new CodexAuthState({ storage }, authEnv);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ device_auth_id: "device-1", user_code: "ABCD-EFGH", interval: "1" }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(
+        Response.json({ authorization_code: "new-code", code_verifier: "verifier" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "new-access",
+          refresh_token: "new-refresh",
+          expires_in: 3600,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = {
+      state: "pending",
+      userCode: "ABCD-EFGH",
+      verificationUrl: "https://auth.openai.com/codex/device",
+    };
+
+    for (const _attempt of [1, 2]) {
+      const response = await auth.fetch(
+        new Request("https://codex-auth.internal/login?force=true", { method: "POST" }),
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(pending);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(storage.alarms).toHaveLength(1);
+    const status = await auth.fetch(new Request("https://codex-auth.internal/status"));
+    await expect(status.json()).resolves.toMatchObject(pending);
+    expect(await storage.get("codex.tokens")).toEqual(sealed);
+
+    await auth.alarm();
+    expect(await storage.get("codex.tokens")).toEqual(sealed);
+    await auth.alarm();
+
+    const replaced = await storage.get("codex.tokens");
+    expect(replaced).toBeDefined();
+    if (!replaced) throw new Error("Missing replacement tokens");
+    await expect(openJson(replaced, encryptionKey)).resolves.toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+    });
+    expect(await storage.get("codex.login")).toBeUndefined();
+    const completed = await auth.fetch(new Request("https://codex-auth.internal/status"));
+    await expect(completed.json()).resolves.toMatchObject({ state: "authenticated" });
+  });
+
   it("refreshes once for three parallel probes and returns only their generated text", async () => {
     const storage = new TestCodexStorage(
       await sealJson(

@@ -16,7 +16,7 @@ npm run dev
 - `GET /ready`：检查必需环境变量。
 - `GET /preview`：生成但不发送播报，需 `Authorization: Bearer $ADMIN_TOKEN`。
 - `POST /run`：立即发送播报，需管理员令牌。
-- `POST /codex/login`：触发 Codex 设备码登录并推送企业微信提示，需管理员令牌。
+- `POST /codex/login`：触发 Codex 设备码登录并推送企业微信提示，需管理员令牌。显式添加 `?force=true` 可跳过已有令牌，开始或复用待完成的设备登录（适用于令牌已撤销但本地尚未过期）；旧令牌保留到新登录成功后替换，期间 `/codex/status` 显示 `pending`。
 - `GET /codex/status`：查看 Codex 登录状态，需管理员令牌。
 - `POST /telegram/webhook`：接收 Telegram webhook；响应 allowlist 群聊中的 `/quota`、`/detect <模型名>`，均可带 `@bot_username`。
 

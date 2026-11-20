@@ -109,7 +109,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   if (request.method === "GET" && url.pathname === "/codex/status")
     return codexStub(env).fetch("https://codex-auth.internal/status");
   if (request.method === "POST" && url.pathname === "/codex/login")
-    return codexStub(env).fetch("https://codex-auth.internal/login", { method: "POST" });
+    return codexStub(env).fetch(
+      `https://codex-auth.internal/login${url.searchParams.get("force") === "true" ? "?force=true" : ""}`,
+      { method: "POST" },
+    );
   return json({ error: "not_found" }, 404);
 }
 
