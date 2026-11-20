@@ -137,7 +137,6 @@ export class CodexAuthState {
       TOKENS_KEY,
       await sealJson(tokens, requiredEnv(this.env, "CODEX_TOKEN_ENCRYPTION_KEY")),
     );
-    await this.state.storage.delete(LOGIN_KEY);
   }
 
   private async status(): Promise<Record<string, unknown>> {
@@ -233,6 +232,7 @@ export class CodexAuthState {
 
     const tokens = await this.exchangeCode(authorizationCode, codeVerifier);
     await this.saveTokens(tokenSnapshot(undefined, tokens));
+    await this.state.storage.delete(LOGIN_KEY);
     await this.notify("**Codex 登录成功**\n> 后续额度播报将自动维护登录状态。");
   }
 

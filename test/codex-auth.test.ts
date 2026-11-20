@@ -99,12 +99,12 @@ describe("Codex auth durable object", () => {
     },
   );
 
-  it("forces and reuses pending device login while preserving old tokens until success", async () => {
+  it("preserves forced device login through old-token refresh until successful replacement", async () => {
     const sealed = await sealJson(
       {
         accessToken: "revoked-access",
         refreshToken: "old-refresh",
-        expiresAt: Date.now() + 3600_000,
+        expiresAt: Date.now() + 60_000,
       },
       encryptionKey,
     );
@@ -115,6 +115,14 @@ describe("Codex auth durable object", () => {
       .mockResolvedValueOnce(
         Response.json({ device_auth_id: "device-1", user_code: "ABCD-EFGH", interval: "1" }),
       )
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: "refreshed-old-access",
+          refresh_token: "refreshed-old-refresh",
+          expires_in: 3600,
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ rate_limit: {} }))
       .mockResolvedValueOnce(new Response(null, { status: 403 }))
       .mockResolvedValueOnce(
         Response.json({ authorization_code: "new-code", code_verifier: "verifier" }),
@@ -146,8 +154,19 @@ describe("Codex auth durable object", () => {
     await expect(status.json()).resolves.toMatchObject(pending);
     expect(await storage.get("codex.tokens")).toEqual(sealed);
 
+    const usage = await auth.fetch(new Request("https://codex-auth.internal/usage"));
+    expect(usage.status).toBe(200);
+    const afterRefresh = await auth.fetch(new Request("https://codex-auth.internal/status"));
+    await expect(afterRefresh.json()).resolves.toMatchObject(pending);
+    const refreshed = await storage.get("codex.tokens");
+    if (!refreshed) throw new Error("Missing refreshed tokens");
+    await expect(openJson(refreshed, encryptionKey)).resolves.toMatchObject({
+      accessToken: "refreshed-old-access",
+      refreshToken: "refreshed-old-refresh",
+    });
+
     await auth.alarm();
-    expect(await storage.get("codex.tokens")).toEqual(sealed);
+    expect(await storage.get("codex.tokens")).toEqual(refreshed);
     await auth.alarm();
 
     const replaced = await storage.get("codex.tokens");
