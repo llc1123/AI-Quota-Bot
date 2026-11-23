@@ -38,14 +38,12 @@ function windowLabel(window: QuotaWindow): string {
 
 function providerRank(provider: string): number {
   switch (provider) {
-    case "Codex":
-      return 0;
     case "Krill AI":
-      return 1;
+      return 0;
     case "ZenMux":
-      return 2;
+      return 1;
     default:
-      return 3;
+      return 2;
   }
 }
 

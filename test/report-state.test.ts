@@ -12,7 +12,7 @@ describe("scheduled report state", () => {
     // Given
     const previous = {
       windows: {
-        "Codex:7d": 10,
+        "Krill AI:cycle": 10,
         "ZenMux:5h": 0,
         "ZenMux:7d": 94,
       },
@@ -23,7 +23,7 @@ describe("scheduled report state", () => {
     };
     const current = {
       windows: {
-        "Codex:7d": 14.9,
+        "Krill AI:cycle": 14.9,
         "ZenMux:5h": 0,
         "ZenMux:7d": 99,
       },
@@ -42,8 +42,8 @@ describe("scheduled report state", () => {
 
   it("sends scheduled reports when any window changes by more than five percentage points", () => {
     // Given
-    const previous = { windows: { "Codex:7d": 10, "ZenMux:7d": 95 }, balances: {} };
-    const current = { windows: { "Codex:7d": 15.1, "ZenMux:7d": 100 }, balances: {} };
+    const previous = { windows: { "Krill AI:cycle": 10, "ZenMux:7d": 95 }, balances: {} };
+    const current = { windows: { "Krill AI:cycle": 15.1, "ZenMux:7d": 100 }, balances: {} };
 
     // When
     const shouldSend = shouldSendForReportChange(previous, current);
@@ -93,7 +93,7 @@ describe("scheduled report state", () => {
     const snapshots = [
       {
         kind: "windowed",
-        provider: "Codex",
+        provider: "ZenMux",
         windows: [{ kind: "7d", usagePercent: 3, timePercent: 10, remainingMs: 60_000 }],
       },
       { kind: "balance", provider: "Krill AI", balance: "$1.00" },
@@ -104,7 +104,7 @@ describe("scheduled report state", () => {
     const baseline = reportBaseline(snapshots);
 
     // Then
-    expect(baseline).toEqual({ windows: { "Codex:7d": 3 }, balances: { "Krill AI": 1 } });
+    expect(baseline).toEqual({ windows: { "ZenMux:7d": 3 }, balances: { "Krill AI": 1 } });
   });
 
   it("keeps duplicate Krill cycle-card windows distinct by subscription id", () => {
@@ -142,21 +142,21 @@ describe("scheduled report state", () => {
     const sent = [
       {
         kind: "windowed",
-        provider: "Codex",
+        provider: "ZenMux",
         windows: [{ kind: "7d", usagePercent: 10, timePercent: 0, remainingMs: 60_000 }],
       },
     ] as const;
     const unsent = [
       {
         kind: "windowed",
-        provider: "Codex",
+        provider: "ZenMux",
         windows: [{ kind: "7d", usagePercent: 14, timePercent: 0, remainingMs: 60_000 }],
       },
     ] as const;
     const cumulative = [
       {
         kind: "windowed",
-        provider: "Codex",
+        provider: "ZenMux",
         windows: [{ kind: "7d", usagePercent: 16, timePercent: 0, remainingMs: 60_000 }],
       },
     ] as const;

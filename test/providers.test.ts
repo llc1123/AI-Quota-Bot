@@ -1,16 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { codexStub } from "../src/env";
 import {
-  codexUsageJson,
   collectSnapshots,
-  parseCodexUsage,
   parseZenmuxPaygBalance,
   parseZenmuxSubscription,
 } from "../src/providers";
 
 vi.mock("../src/env", () => ({
-  codexStub: vi.fn(),
-  codexUsageRelay: vi.fn(() => undefined),
   krillApiBase: vi.fn(() => "https://krill.test"),
   requiredEnv: vi.fn(() => "test-key"),
   zenmuxApiBase: vi.fn(() => "https://zenmux.test"),
@@ -18,117 +13,11 @@ vi.mock("../src/env", () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 describe("quota provider parsers", () => {
-  it("parses Codex wham usage rate limit windows", () => {
-    // Given
-    const now = Date.parse("2026-07-15T00:00:00.000Z");
-
-    // When
-    const windows = parseCodexUsage(
-      {
-        plan_type: "plus",
-        rate_limit: {
-          primary_window: {
-            used_percent: 12.5,
-            reset_at: now / 1000 + 60 * 60,
-            limit_window_seconds: 18_000,
-          },
-          secondary_window: {
-            used_percent: 80,
-            reset_after_seconds: 86_400,
-            limit_window_seconds: 604_800,
-          },
-        },
-      },
-      now,
-    );
-
-    // Then
-    expect(windows).toEqual([
-      { kind: "5h", usagePercent: 12.5, timePercent: 80, remainingMs: 3_600_000 },
-      {
-        kind: "7d",
-        usagePercent: 80,
-        timePercent: expect.closeTo(85.714, 3),
-        remainingMs: 86_400_000,
-      },
-    ]);
-  });
-
-  it("classifies Codex windows by their actual window length", () => {
-    // Given
-    const now = Date.parse("2026-07-15T00:00:00.000Z");
-
-    // When
-    const windows = parseCodexUsage(
-      {
-        rate_limit: {
-          primary_window: {
-            used_percent: 2,
-            reset_after_seconds: 86_400,
-            limit_window_seconds: 604_800,
-          },
-          secondary_window: null,
-        },
-      },
-      now,
-    );
-
-    // Then
-    expect(windows).toEqual([
-      {
-        kind: "7d",
-        usagePercent: 2,
-        timePercent: expect.closeTo(85.714, 3),
-        remainingMs: 86_400_000,
-      },
-    ]);
-  });
-
-  it("discovers any Codex rate limit window by its actual duration", () => {
-    // Given
-    const now = Date.parse("2026-07-15T00:00:00.000Z");
-
-    // When
-    const windows = parseCodexUsage(
-      {
-        rate_limit: {
-          weekly_window: {
-            used_percent: 3,
-            reset_after_seconds: 86_400,
-            limit_window_seconds: 604_800,
-          },
-          rolling_five_hour_window: {
-            used_percent: 40,
-            reset_after_seconds: 9_000,
-            limit_window_seconds: 18_000,
-          },
-        },
-      },
-      now,
-    );
-
-    // Then
-    expect(windows.map((window) => window.kind)).toEqual(["7d", "5h"]);
-    expect(windows[1]).toMatchObject({ kind: "5h", usagePercent: 40, remainingMs: 9_000_000 });
-  });
-
-  it("reports Codex usage egress blocks as a short error", async () => {
-    // Given
-    const response = Response.json(
-      { error: "Codex usage blocked by OpenAI before authentication in Worker fetch" },
-      { status: 502 },
-    );
-
-    // When / Then
-    await expect(codexUsageJson(response)).rejects.toThrow(
-      "Codex usage blocked by OpenAI before authentication in Worker fetch",
-    );
-  });
-
   it("parses ZenMux documented subscription detail quotas", () => {
     // Given
     const now = Date.parse("2026-03-24T03:35:09.000Z");
@@ -202,16 +91,13 @@ describe("quota provider parsers", () => {
     expect(balance).toBe("$33.65");
   });
 
-  it("paces concurrent ZenMux PAYG requests by five seconds", async () => {
+  it("paces concurrent ZenMux PAYG requests by five seconds while collecting Krill directly", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
-    vi.mocked(codexStub).mockReturnValue({
-      fetch: vi.fn().mockResolvedValue(Response.json({ rate_limit: {} })),
-    } as unknown as DurableObjectStub);
     const paygStarts: number[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = String(input);
         if (url.endsWith("/api/v1/management/payg/balance")) {
           paygStarts.push(Date.now());
@@ -220,7 +106,11 @@ describe("quota provider parsers", () => {
         if (url.endsWith("/api/v1/management/subscription/detail")) {
           return Response.json({ data: {} });
         }
-        return Response.json({});
+        if (url === "https://krill.test/api/subscription") {
+          expect(init?.headers).toEqual({ authorization: "Bearer test-key" });
+          return Response.json({ data: { credit_balance_usd: 100, welfare_balance_usd: 25 } });
+        }
+        throw new Error(`Unexpected provider URL: ${url}`);
       }),
     );
     const env = {} as unknown as Env;
@@ -231,8 +121,20 @@ describe("quota provider parsers", () => {
     await vi.advanceTimersByTimeAsync(4_999);
     expect(paygStarts).toEqual([0]);
     await vi.advanceTimersByTimeAsync(1);
-    await reports;
+    const snapshots = await reports;
 
     expect(paygStarts).toEqual([0, 5_000]);
+    for (const report of snapshots) {
+      expect(report).toEqual([
+        { kind: "windowed", provider: "ZenMux", windows: [] },
+        { kind: "balance", provider: "ZenMux", balance: "$1.00" },
+        {
+          kind: "balance",
+          provider: "Krill AI",
+          balance: "$100.00",
+          breakdown: { wallet: "$75.00", welfare: "$25.00" },
+        },
+      ]);
+    }
   });
 });

@@ -11,7 +11,7 @@ describe("buildMarkdown", () => {
       [
         {
           kind: "windowed",
-          provider: "Codex",
+          provider: "ZenMux",
           windows: [
             { kind: "5h", usagePercent: 12.34, timePercent: 50, remainingMs: 9_000_000 },
             { kind: "7d", usagePercent: 100, timePercent: 80, remainingMs: 86_400_000 },
@@ -23,11 +23,6 @@ describe("buildMarkdown", () => {
               timing: "idle",
             },
           ],
-        },
-        {
-          kind: "windowed",
-          provider: "ZenMux",
-          windows: [{ kind: "5h", usagePercent: 0, timePercent: 0, remainingMs: 18_000_000 }],
         },
         {
           kind: "windowed",
@@ -73,8 +68,7 @@ describe("buildMarkdown", () => {
     expect(markdown).toContain("**备用按量渠道**");
     expect(markdown).toContain("> ZenMux：$33.65");
     expect(markdown).toContain("> Krill AI：$364.06 (余额 $344.05, 赠金 $20.01)");
-    expect(markdown.indexOf("**备用按量渠道**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
-    expect(markdown.indexOf("**Krill AI**")).toBeGreaterThan(markdown.indexOf("**Codex**"));
+    expect(markdown.indexOf("**备用按量渠道**")).toBeGreaterThan(markdown.indexOf("**ZenMux**"));
     expect(markdown.indexOf("**Krill AI**")).toBeLessThan(markdown.indexOf("**ZenMux**"));
   });
 });
@@ -89,13 +83,8 @@ describe("buildTelegramMessage", () => {
       [
         {
           kind: "windowed",
-          provider: "Codex",
-          windows: [{ kind: "5h", usagePercent: 12.34, timePercent: 50, remainingMs: 9_000_000 }],
-        },
-        {
-          kind: "windowed",
           provider: "ZenMux",
-          windows: [{ kind: "5h", usagePercent: 0, timePercent: 0, remainingMs: 18_000_000 }],
+          windows: [{ kind: "5h", usagePercent: 12.34, timePercent: 50, remainingMs: 9_000_000 }],
         },
         {
           kind: "windowed",
@@ -123,15 +112,12 @@ describe("buildTelegramMessage", () => {
 
     // Then
     expect(message).toContain("AI 额度\n时间：2026/7/15 08:00:00");
-    expect(message).toContain("Codex\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
+    expect(message).toContain("ZenMux\n• 5小时窗口：已用 12.3%；剩余 2小时30分钟");
     expect(message).toContain("Krill AI\n• Krill Pro 周卡：已用 25.0%；剩余 3天12小时");
     expect(message).toContain("ZenMux\n• 获取失败：upstream unavailable");
     expect(message).toContain("备用按量渠道\n• Krill AI：$364.06 (余额 $344.05, 赠金 $20.01)");
     expect(message).not.toContain("<font");
     expect(message).not.toContain("**");
-    expect(message.indexOf("Krill AI\n• Krill Pro 周卡")).toBeGreaterThan(
-      message.indexOf("Codex\n"),
-    );
     expect(message.indexOf("Krill AI\n• Krill Pro 周卡")).toBeLessThan(message.indexOf("ZenMux\n"));
   });
 
@@ -141,7 +127,7 @@ describe("buildTelegramMessage", () => {
 
     // When
     const message = buildTelegramMessage([
-      { kind: "error", provider: "Codex", message: oversizedError },
+      { kind: "error", provider: "ZenMux", message: oversizedError },
     ]);
 
     // Then

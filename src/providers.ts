@@ -1,4 +1,4 @@
-import { codexStub, codexUsageRelay, krillApiBase, requiredEnv, zenmuxApiBase } from "./env";
+import { krillApiBase, requiredEnv, zenmuxApiBase } from "./env";
 import { asNumber, asString, fetchJson, isRecord, joinUrl } from "./http";
 import { parseKrillBalance, parseKrillCycleWindows } from "./krill";
 
@@ -30,7 +30,7 @@ export type QuotaWindow = {
 export type ProviderSnapshot =
   | {
       readonly kind: "windowed";
-      readonly provider: "Codex" | "ZenMux" | "Krill AI";
+      readonly provider: "ZenMux" | "Krill AI";
       readonly windows: readonly QuotaWindow[];
     }
   | {
@@ -61,68 +61,6 @@ function progressFromReset(
     timePercent: Math.max(0, Math.min(100, (elapsed / windowMs) * 100)),
     remainingMs: resetMs - nowMs,
   };
-}
-
-function windowKind(seconds: number | undefined, fallback: WindowKind): WindowKind | undefined {
-  if (seconds === undefined) return fallback;
-  const windowMs = seconds * 1000;
-  if (Math.abs(windowMs - FIVE_HOURS_MS) <= 60_000) return "5h";
-  if (Math.abs(windowMs - SEVEN_DAYS_MS) <= 60_000) return "7d";
-  return undefined;
-}
-
-function codexWindow(
-  raw: unknown,
-  fallbackKind: WindowKind,
-  nowMs: number,
-): QuotaWindow | undefined {
-  if (!isRecord(raw)) return undefined;
-  const used = asNumber(raw["used_percent"]);
-  const resetAtSeconds = asNumber(raw["reset_at"]);
-  const resetAfterSeconds = asNumber(raw["reset_after_seconds"]);
-  const limitWindowSeconds = asNumber(raw["limit_window_seconds"]);
-  const kind = windowKind(limitWindowSeconds, fallbackKind);
-  if (used === undefined) return undefined;
-  if (kind === undefined) return undefined;
-  const windowMs = kind === "5h" ? FIVE_HOURS_MS : SEVEN_DAYS_MS;
-  const resetMs =
-    resetAfterSeconds !== undefined
-      ? nowMs + resetAfterSeconds * 1000
-      : resetAtSeconds === undefined
-        ? undefined
-        : resetAtSeconds * 1000;
-  return {
-    kind,
-    usagePercent: used,
-    ...progressFromReset(resetMs, windowMs, nowMs),
-  };
-}
-
-export function parseCodexUsage(raw: unknown, nowMs = Date.now()): readonly QuotaWindow[] {
-  if (!isRecord(raw)) return [];
-  if (isRecord(raw["rate_limit"])) {
-    const limit = raw["rate_limit"];
-    const windows = new Map<WindowKind, QuotaWindow>();
-    for (const value of Object.values(limit)) {
-      const window = codexWindow(value, "5h", nowMs);
-      if (window) windows.set(window.kind, window);
-    }
-    return [...windows.values()];
-  }
-  return [];
-}
-
-export async function codexUsageJson(response: Response): Promise<unknown> {
-  if (response.ok) return response.json<unknown>();
-  const body = await response.text();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    parsed = undefined;
-  }
-  const error = isRecord(parsed) ? asString(parsed["error"]) : undefined;
-  throw new Error(error ?? `Codex usage failed: HTTP ${response.status}`);
 }
 
 function zenmuxWindow(raw: unknown, kind: WindowKind, nowMs: number): QuotaWindow | undefined {
@@ -252,12 +190,6 @@ export async function collectSnapshots(
   nowMs = Date.now(),
 ): Promise<readonly ProviderSnapshot[]> {
   const collectionId = crypto.randomUUID();
-  const codex = provider({ kind: "error", provider: "Codex", message: "" }, async () => {
-    const raw = await codexStub(env)
-      .fetch("https://codex-auth.internal/usage")
-      .then(codexUsageJson);
-    return { kind: "windowed", provider: "Codex", windows: parseCodexUsage(raw, nowMs) };
-  });
   const zenmux = provider({ kind: "error", provider: "ZenMux", message: "" }, async () => {
     const raw = await withZenmuxRequest((queueWaitMs) =>
       fetchZenmuxJson(
@@ -287,15 +219,11 @@ export async function collectSnapshots(
   });
   const krill = (async (): Promise<readonly ProviderSnapshot[]> => {
     try {
-      const relay = codexUsageRelay(env);
       const raw = await fetchJson(
-        relay
-          ? new URL("/krill/subscription", relay.url).href
-          : joinUrl(krillApiBase(env), "/api/subscription"),
+        joinUrl(krillApiBase(env), "/api/subscription"),
         {
           headers: {
             authorization: `Bearer ${requiredEnv(env, "KRILL_JWT")}`,
-            ...(relay ? { "x-relay-token": relay.token } : {}),
           },
         },
         "Krill subscription",
@@ -318,11 +246,10 @@ export async function collectSnapshots(
       ];
     }
   })();
-  const [codexSnapshot, zenmuxSnapshot, zenmuxPaygSnapshot, krillSnapshots] = await Promise.all([
-    codex,
+  const [zenmuxSnapshot, zenmuxPaygSnapshot, krillSnapshots] = await Promise.all([
     zenmux,
     zenmuxPayg,
     krill,
   ]);
-  return [codexSnapshot, zenmuxSnapshot, zenmuxPaygSnapshot, ...krillSnapshots];
+  return [zenmuxSnapshot, zenmuxPaygSnapshot, ...krillSnapshots];
 }

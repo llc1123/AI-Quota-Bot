@@ -20,18 +20,6 @@
       "id": "5235a9def8144a42bde4ef8d9c8be5e8"
     }
   ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "CODEX_AUTH",
-        "class_name": "CodexAuthState"
-      },
-      {
-        "name": "DETECTION_JOBS",
-        "class_name": "DetectionJob"
-      }
-    ]
-  },
   "migrations": [
     {
       "tag": "v1",
@@ -40,6 +28,10 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["DetectionJob"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["CodexAuthState", "DetectionJob"]
     }
   ]
 }

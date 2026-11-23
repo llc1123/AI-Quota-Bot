@@ -24,85 +24,34 @@ function webhookRequest(payload: unknown, secret = "telegram-secret"): Request {
 }
 
 describe("handleTelegramWebhook", () => {
-  it.each([
-    ["/detect gpt-5.6-luna", -1001234567890, true],
-    ["/detect@ai_quota_bot gpt-5.6-luna", -1001234567890, true],
-    ["/detect@another_bot gpt-5.6-luna", -1001234567890, false],
-    ["/detect gpt-5.6-luna", -1009999999999, false],
-  ])("dispatches %s only for this bot in allowed groups", async (text, chatId, accepted) => {
-    const startDetection = vi.fn().mockResolvedValue(undefined);
-    const response = await handleTelegramWebhook(
-      webhookRequest({
-        update_id: 201,
-        message: {
-          message_id: 91,
-          message_thread_id: 7,
-          chat: { id: chatId, type: "supergroup" },
-          text,
-        },
-      }),
-      config,
-      {
-        getQuotaMessage: vi.fn(),
-        sendMessage: vi.fn(),
-        startDetection,
-        waitUntil: vi.fn(),
-      },
-    );
-    expect(response.status).toBe(200);
-    if (accepted)
-      expect(startDetection).toHaveBeenCalledWith({
-        updateId: 201,
-        chatId,
-        messageId: 91,
-        messageThreadId: 7,
-        model: "gpt-5.6-luna",
-      });
-    else expect(startDetection).not.toHaveBeenCalled();
-  });
-
-  it("waits for durable job persistence before acknowledging detection", async () => {
-    const startDetection = vi.fn().mockRejectedValue(new Error("storage unavailable"));
-    await expect(
-      handleTelegramWebhook(
+  it.each(["/detect", "/detect gpt-5.6-luna", "/detect@ai_quota_bot gpt-5.6-luna"])(
+    "silently ignores removed command %s in allowed groups",
+    async (text) => {
+      const getQuotaMessage = vi.fn();
+      const sendMessage = vi.fn();
+      const waitUntil = vi.fn();
+      const response = await handleTelegramWebhook(
         webhookRequest({
-          update_id: 202,
+          update_id: 201,
           message: {
-            message_id: 92,
+            message_id: 91,
+            message_thread_id: 7,
             chat: { id: -1001234567890, type: "supergroup" },
-            text: "/detect gpt-5.6-luna",
+            text,
           },
         }),
         config,
-        { getQuotaMessage: vi.fn(), sendMessage: vi.fn(), startDetection, waitUntil: vi.fn() },
-      ),
-    ).rejects.toThrow("storage unavailable");
-  });
-
-  it.each(["/detect", "/detect bad model", "/detect https://example.com"])(
-    "shows usage for invalid detection command %s",
-    async (text) => {
-      const sendMessage = vi.fn();
-      const startDetection = vi.fn();
-      const tasks: Promise<void>[] = [];
-      await handleTelegramWebhook(
-        webhookRequest({
-          update_id: 203,
-          message: { message_id: 93, chat: { id: -1001234567890, type: "supergroup" }, text },
-        }),
-        config,
         {
-          getQuotaMessage: vi.fn(),
+          getQuotaMessage,
           sendMessage,
-          startDetection,
-          waitUntil: (task) => tasks.push(task),
+          waitUntil,
         },
       );
-      await Promise.all(tasks);
-      expect(startDetection).not.toHaveBeenCalled();
-      expect(sendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ chatId: -1001234567890, messageId: 93 }),
-      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true });
+      expect(getQuotaMessage).not.toHaveBeenCalled();
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(waitUntil).not.toHaveBeenCalled();
     },
   );
 
@@ -133,7 +82,6 @@ describe("handleTelegramWebhook", () => {
       {
         getQuotaMessage,
         sendMessage,
-        startDetection: vi.fn(),
         waitUntil: (task) => tasks.push(task),
       },
     );
@@ -174,7 +122,6 @@ describe("handleTelegramWebhook", () => {
       {
         getQuotaMessage,
         sendMessage,
-        startDetection: vi.fn(),
         waitUntil: (task) => tasks.push(task),
       },
     );
@@ -206,7 +153,6 @@ describe("handleTelegramWebhook", () => {
       {
         getQuotaMessage,
         sendMessage,
-        startDetection: vi.fn(),
         waitUntil: (task) => tasks.push(task),
       },
     );
@@ -231,7 +177,6 @@ describe("handleTelegramWebhook", () => {
       {
         getQuotaMessage,
         sendMessage,
-        startDetection: vi.fn(),
         waitUntil: (task) => tasks.push(task),
       },
     );
@@ -252,7 +197,6 @@ describe("handleTelegramWebhook", () => {
     const response = await handleTelegramWebhook(webhookRequest({ update_id: "invalid" }), config, {
       getQuotaMessage,
       sendMessage,
-      startDetection: vi.fn(),
       waitUntil: (task) => tasks.push(task),
     });
 

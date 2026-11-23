@@ -28,19 +28,20 @@ const responseSchema = z.discriminatedUnion("ok", [
   }),
 ]);
 
-async function telegramRequest(
-  token: string,
-  request: {
-    readonly method: "sendMessage" | "editMessageText";
-    readonly body: Record<string, unknown>;
-  },
-): Promise<number> {
+export async function sendTelegramMessage(token: string, reply: TelegramReply): Promise<number> {
   let payload: unknown;
   try {
-    const response = await fetch(`https://api.telegram.org/bot${token}/${request.method}`, {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(request.body),
+      body: JSON.stringify({
+        chat_id: reply.chatId,
+        text: reply.text,
+        ...(reply.messageThreadId === undefined
+          ? {}
+          : { message_thread_id: reply.messageThreadId }),
+        reply_parameters: { message_id: reply.messageId },
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     payload = await response.json();
@@ -51,34 +52,7 @@ async function telegramRequest(
   const response = responseSchema.safeParse(payload);
   if (!response.success) throw new TelegramApiError("invalid_response");
   if (!response.data.ok) {
-    const messageId = request.body["message_id"];
-    if (
-      request.method === "editMessageText" &&
-      typeof messageId === "number" &&
-      response.data.error_code === 400 &&
-      response.data.description?.startsWith("Bad Request: message is not modified")
-    )
-      return messageId;
     throw new TelegramApiError("api_rejected");
   }
   return response.data.result.message_id;
-}
-
-export function sendTelegramMessage(token: string, reply: TelegramReply): Promise<number> {
-  return telegramRequest(token, {
-    method: "sendMessage",
-    body: {
-      chat_id: reply.chatId,
-      text: reply.text,
-      ...(reply.messageThreadId === undefined ? {} : { message_thread_id: reply.messageThreadId }),
-      reply_parameters: { message_id: reply.messageId },
-    },
-  });
-}
-
-export async function editTelegramMessage(token: string, reply: TelegramReply): Promise<void> {
-  await telegramRequest(token, {
-    method: "editMessageText",
-    body: { chat_id: reply.chatId, message_id: reply.messageId, text: reply.text },
-  });
 }

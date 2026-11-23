@@ -16,7 +16,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
     "@cloudflare/vite-plugin": "^1.69.1",
-    "miniflare": "5.20261116.0-beta",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.0",

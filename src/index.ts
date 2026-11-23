@@ -1,6 +1,4 @@
-import { CodexAuthState } from "./codex-auth";
-import { DetectionJob } from "./detection-job";
-import { codexStub, requiredEnv, type SecretName } from "./env";
+import { requiredEnv, type SecretName } from "./env";
 import { bearerAuth, json } from "./http";
 import { collectSnapshots } from "./providers";
 import { buildMarkdown, buildTelegramMessage } from "./report";
@@ -12,8 +10,6 @@ import {
   TelegramConfigurationError,
 } from "./telegram";
 import { sendWecomMarkdown } from "./wecom";
-
-export { CodexAuthState, DetectionJob };
 
 async function adminGuard(request: Request, env: Env): Promise<Response | undefined> {
   const token = requiredEnv(env, "ADMIN_TOKEN");
@@ -38,7 +34,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     const requiredNames = [
       "WECOM_WEBHOOK_URL",
       "ADMIN_TOKEN",
-      "CODEX_TOKEN_ENCRYPTION_KEY",
       "ZENMUX_MANAGEMENT_KEY",
       "KRILL_JWT",
       "TELEGRAM_BOT_TOKEN",
@@ -76,25 +71,13 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       {
         getQuotaMessage: async () => buildTelegramMessage(await collectSnapshots(env)),
         sendMessage: (reply) => sendTelegramMessage(token, reply),
-        startDetection: async (command) => {
-          const id = env.DETECTION_JOBS.idFromName(`${command.chatId}:${command.updateId}`);
-          const response = await env.DETECTION_JOBS.get(id).fetch(
-            "https://detection.internal/start",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(command),
-            },
-          );
-          if (!response.ok) throw new Error("检测任务创建失败");
-        },
         waitUntil: (task) => ctx.waitUntil(task),
       },
     );
   }
   const protectedRoute =
-    (request.method === "GET" && ["/preview", "/codex/status"].includes(url.pathname)) ||
-    (request.method === "POST" && ["/run", "/codex/login"].includes(url.pathname));
+    (request.method === "GET" && url.pathname === "/preview") ||
+    (request.method === "POST" && url.pathname === "/run");
   if (protectedRoute) {
     const rejected = await adminGuard(request, env);
     if (rejected) return rejected;
@@ -106,13 +89,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     await saveReportBaseline(env.REPORT_STATE, current.snapshots);
     return json({ ok: true, snapshots: current.snapshots });
   }
-  if (request.method === "GET" && url.pathname === "/codex/status")
-    return codexStub(env).fetch("https://codex-auth.internal/status");
-  if (request.method === "POST" && url.pathname === "/codex/login")
-    return codexStub(env).fetch(
-      `https://codex-auth.internal/login${url.searchParams.get("force") === "true" ? "?force=true" : ""}`,
-      { method: "POST" },
-    );
   return json({ error: "not_found" }, 404);
 }
 

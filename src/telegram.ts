@@ -5,7 +5,6 @@ import type { TelegramReply } from "./telegram-api";
 export { sendTelegramMessage, TelegramApiError, type TelegramReply } from "./telegram-api";
 
 const QUOTA_COMMAND = /^\/quota(?:@([A-Za-z0-9_]+))?$/i;
-const DETECT_COMMAND = /^\/detect(?:@([A-Za-z0-9_]+))?(?:\s+(.+))?$/i;
 
 const telegramUpdateSchema = z.object({
   update_id: z.number().int(),
@@ -22,11 +21,6 @@ const telegramUpdateSchema = z.object({
     .optional(),
 });
 
-export type TelegramDetection = Omit<TelegramReply, "text"> & {
-  readonly updateId: number;
-  readonly model: string;
-};
-
 export type TelegramWebhookConfig = {
   readonly webhookSecret: string;
   readonly allowedChatIds: ReadonlySet<string>;
@@ -42,7 +36,6 @@ export type TelegramWebhookConfigInput = {
 export type TelegramCommandServices = {
   readonly getQuotaMessage: () => Promise<string>;
   readonly sendMessage: (reply: TelegramReply) => Promise<unknown>;
-  readonly startDetection: (command: TelegramDetection) => Promise<void>;
   readonly waitUntil: (task: Promise<void>) => void;
 };
 
@@ -130,23 +123,7 @@ export async function handleTelegramWebhook(
       ? {}
       : { messageThreadId: message.message_thread_id }),
   };
-  const detect = DETECT_COMMAND.exec(message.text.trim());
-  if (
-    detect &&
-    (detect[1] === undefined || detect[1].toLowerCase() === config.botUsername.toLowerCase())
-  ) {
-    const model = detect[2]?.trim();
-    if (model && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(model)) {
-      // Persist the job before acknowledging; Telegram can redeliver a failed webhook safely.
-      await services.startDetection({ ...reply, updateId: parsed.data.update_id, model });
-    } else {
-      services.waitUntil(
-        (async () => {
-          await services.sendMessage({ ...reply, text: "用法：/detect gpt-5.6-luna" });
-        })(),
-      );
-    }
-  } else if (isQuotaCommand(message.text, config.botUsername)) {
+  if (isQuotaCommand(message.text, config.botUsername)) {
     services.waitUntil(
       services.getQuotaMessage().then(async (text) => {
         await services.sendMessage({ ...reply, text });
